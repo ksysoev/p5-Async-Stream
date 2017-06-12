@@ -4,6 +4,8 @@ use 5.006;
 use strict;
 use warnings;
 
+use Async::Stream::Item;
+
 =head1 NAME
 
 Async::Stream - it's convinient way to work with async data flow.
@@ -35,52 +37,81 @@ if you don't export anything, such as for a purely object-oriented module.
 
 =head1 SUBROUTINES/METHODS
 
-=head2 function1
-
+=head2 new
+	
 =cut
 
 sub new {
 	my $class = shift;
 	my $next_item_callback = shift;
-	my $on_create = shift;
 
 	my $self = {
-			_generator => $next_item_callback,
-			_head => undef,
+			_head =>  Async::Stream::Item->new(undef, $next_item_callback),
 		};
 
 	bless $self, $class;
-
-	$next_item_callback->(sub {
-			my $val = shift;
-			my $val = shift;
-			if (defined $val) {
-				$self->{_next} = __PACKAGE__->new($val, $self->{_next})	
-			} else {
-				$self->{_next} = $val
-			}
-			
-			$next_cb->($self->{_next});
-
-		});
-
-	$on_create->($self);
 }
 
-=head2 function2
+=head2 head
 
 =cut
 
 sub head {
 	my $self = shift;
+	$self->{_head};
+}
 
-	unless (defined $self->{_head}) {
-		generato
-		$self->{_head} = 
-	} else {
 
-	}
+sub filter (&$) {
+	my $is_intresting = shift;
+	my $stream = shift;
+	
+	die   unless ref $is_intresting eq "CODE";
 
+	my $item = $stream->head;
+
+	my $grep_cb; $grep_cb = sub {
+		my $return_cb = shift;
+		$item->next(sub {
+			$item = shift;
+			if (defined $item) { 
+				local $_ = $item->val;
+				if ($is_intresting->()) {
+					$return_cb->($item->val);
+				} else {
+					$grep_cb->($return_cb)
+				}
+			} else {
+				$return_cb->(undef)
+			}
+		});
+	};
+	
+	Async::Stream->new($grep_cb);
+}
+
+sub transform  (&$) {
+	my $transform = shift;
+	my $stream = shift;
+	
+	die   unless ref $transform eq "CODE";
+
+	my $item = $stream->head;
+
+	my $grep_cb; $grep_cb = sub {
+		my $return_cb = shift;
+		$item->next(sub {
+			$item = shift;
+			if (defined $item) { 
+				local $_ = $item->val;
+				$return_cb->($transform->());
+			} else {
+				$return_cb->(undef)
+			}
+		});
+	};
+	
+	Async::Stream->new($grep_cb);
 }
 
 =head1 AUTHOR
