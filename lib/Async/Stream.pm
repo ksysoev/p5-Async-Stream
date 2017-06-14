@@ -5,6 +5,7 @@ use strict;
 use warnings;
 
 use Async::Stream::Item;
+use Scalar::Util qw(weaken);
 
 =head1 NAME
 
@@ -61,14 +62,87 @@ sub head {
 	$self->{_head};
 }
 
+sub each {
+	my $self = shift;
+	my $action = shift;
 
-sub filter (&$) {
-	my $is_intresting = shift;
-	my $stream = shift;
+	my $item = $self->head;
+
+	my $each; $each = sub {
+		$item->next(sub {
+			$item = shift;
+			if (defined $item) {
+				$action->($item->val);
+				$each->()
+			}
+		});
+	}; $each->();
+	weaken $each;
+}
+
+sub reduce  {
+	my $self = shift;
+	my $code = shift;
+	my $return_cb = shift;
+
+	my $pkg = caller;
 	
-	die   unless ref $is_intresting eq "CODE";
+	$self->head->next(sub {
+			my $item = shift;
+			return $return_cb->() unless defined $item;
+			no strict 'refs';
+			my $prev = $item->val;
+			my $reduce_cb; $reduce_cb = sub {
+				$item->next(sub {
+						$item = shift;
+						if (defined $item) {
+							local ${ $pkg . '::a' } = $prev;
+        			local ${ $pkg . '::b' } = $item->val;
+							$prev = $code->();
+							$reduce_cb->();
+						} else {
+							$return_cb->($prev);
+						}
+					});
+			};$reduce_cb->();
+			weaken $reduce_cb;
+		});
 
-	my $item = $stream->head;
+	return $self;
+}
+
+sub sum {
+	my $self = shift;
+	my $return_cb = shift;
+
+	$self->reduce(sub{$a+$b}, $return_cb);
+
+	return $self;
+}
+
+sub min {
+	my $self = shift;
+	my $return_cb = shift;
+
+	$self->reduce(sub{$a < $b ? $a : $b}, $return_cb);
+
+	return $self;
+}
+
+sub max {
+	my $self = shift;
+	my $return_cb = shift;
+
+	$self->reduce(sub{$a > $b ? $a : $b}, $return_cb);
+
+	return $self;
+}
+
+sub filter {
+	my $self = shift;
+	my $is_intresting = shift;
+
+	my $item = $self->head;
 
 	my $grep_cb; $grep_cb = sub {
 		my $return_cb = shift;
@@ -90,13 +164,14 @@ sub filter (&$) {
 	Async::Stream->new($grep_cb);
 }
 
-sub transform  (&$) {
+sub transform {
+	my $self = shift;
 	my $transform = shift;
-	my $stream = shift;
+	
 	
 	die   unless ref $transform eq "CODE";
 
-	my $item = $stream->head;
+	my $item = $self->head;
 
 	my $grep_cb; $grep_cb = sub {
 		my $return_cb = shift;
