@@ -189,6 +189,95 @@ sub transform {
 	Async::Stream->new($grep_cb);
 }
 
+sub concat {
+	my @streams = @_;
+
+	my $item  = (shift @streams)->head;
+
+	my $concat_cb; $concat_cb = sub {
+		my $return_cb = shift;
+		$item->next(sub {
+			$item = shift;
+			if (defined $item) { 
+				$return_cb->($item->val);
+			} else {
+				if (@streams) {
+					$item  = (shift @streams)->head;
+					$concat_cb->($return_cb);
+				} else {;
+					$return_cb->(undef)	
+				}
+			}
+		});
+	};
+
+	Async::Stream->new($concat_cb);
+}
+
+sub count {
+	my $self = shift;
+	my $return_cb = shift;
+
+	my $result = 0;
+	
+	$self->head->next(sub {
+			my $item = shift;
+			return $return_cb->($result) unless defined $item;
+			my $reduce_cb; $reduce_cb = sub {
+				$result++;
+				$item->next(sub {
+						$item = shift;
+						if (defined $item) {
+							$reduce_cb->();
+						} else {
+							$return_cb->($result);
+						}
+					});
+			};$reduce_cb->();
+			weaken $reduce_cb;
+		});
+
+	return $self;
+}
+
+sub skip {}
+
+sub sort {}
+
+sub cut_sort {}
+
+sub to_arrayref {
+	my $self = shift;
+	my $return_cb = shift;
+
+	my @result;
+	
+	$self->head->next(sub {
+			my $item = shift;
+			return $return_cb->(\@result) unless defined $item;
+			my $reduce_cb; $reduce_cb = sub {
+				push @result, $item->val;
+				$item->next(sub {
+						$item = shift;
+						if (defined $item) {
+							$reduce_cb->();
+						} else {
+							$return_cb->(\@result);
+						}
+					});
+			};$reduce_cb->();
+			weaken $reduce_cb;
+		});
+
+	return $self;
+
+}
+
+sub limit {}
+
+sub merge {}
+
+
 =head1 AUTHOR
 
 Kirill Sysoev, C<< <k.sysoev at me.com> >>
