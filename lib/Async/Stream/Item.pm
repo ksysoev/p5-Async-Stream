@@ -4,6 +4,12 @@ use 5.006;
 use strict;
 use warnings;
 
+
+use constant {
+	VALUE => 0,
+	NEXT  => 1,
+};
+
 =head1 NAME
 
 Item for Async stream
@@ -14,7 +20,7 @@ Version 0.01
 
 =cut
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 
 =head1 SYNOPSIS
@@ -33,11 +39,7 @@ Creating and managing item for Async::Stream
 
 sub new {
 	my ($class, $val, $next) = @_;
-
-	bless {
-			_val  => $val,
-			_next => $next,
-		}, $class;
+	bless [ $val, $next ], $class;
 }
 
 =head2 val()
@@ -46,7 +48,7 @@ sub new {
 
 sub val {
 	my $self = shift;
-	$self->{_val};
+	$self->[VALUE];
 }
 
 =head2 next(next_callback);
@@ -57,19 +59,19 @@ sub next {
 	my $self = shift;
 	my $next_cb = shift;
 
-	if (ref $self->{_next} eq "CODE") {
-		$self->{_next}(sub {
+	if (ref $self->[NEXT] eq "CODE") {
+		$self->[NEXT](sub {
 				my $val = shift;
 				if (defined $val) {
-					$self->{_next} = __PACKAGE__->new($val, $self->{_next})	
+					$self->[NEXT] = __PACKAGE__->new($val, $self->[NEXT])	
 				} else {
-					$self->{_next} = $val
+					$self->[NEXT] = $val
 				}
 				
-				$next_cb->($self->{_next});
+				$next_cb->($self->[NEXT]);
 			});
 	} else {
-		$next_cb->($self->{_next});
+		$next_cb->($self->[NEXT]);
 	}
 }
 
