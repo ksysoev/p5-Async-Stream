@@ -5,6 +5,7 @@ use strict;
 use warnings;
 
 use Async::Stream::Item;
+use Async::Stream::Iterator;
 use Scalar::Util qw(weaken);
 
 =head1 NAME
@@ -240,7 +241,32 @@ sub count {
 	return $self;
 }
 
-sub skip {}
+sub skip {
+	my $self = shift;
+	my $skip = int(shift);
+
+	$skip = 0 if $skip < 0;
+
+	if ($skip) {
+		my $iterator = Async::Stream::Iterator->new($self);
+
+		my $generator; $generator = sub {
+			my $return_cb = shift;
+			$iterator->next(sub {
+					my $val = shift;
+					if ( $skip-- > 0 ){
+						$generator->($return_cb);
+					} else {
+						$return_cb->($val);
+					}
+				});
+		};
+
+		return Async::Stream->new($generator);
+	} else {
+		return $self;
+	}
+}
 
 sub sort {}
 
@@ -273,7 +299,30 @@ sub to_arrayref {
 
 }
 
-sub limit {}
+sub limit {
+	my $self = shift;
+	my $limit = int(shift);
+
+	$limit = 0 if $limit < 0;
+
+	my $generator;
+	if ($limit) {
+		my $iterator = Async::Stream::Iterator->new($self);
+
+		$generator = sub {
+			my $return_cb = shift;
+			return $return_cb->(undef) if ( $limit-- < 0);
+			$iterator->next($return_cb);
+		}
+	} else {
+		$generator = sub {
+			my $return_cb = shift;
+			$return_cb->(undef);
+		}
+	}
+
+	Async::Stream->new($generator);
+}
 
 sub merge {}
 
