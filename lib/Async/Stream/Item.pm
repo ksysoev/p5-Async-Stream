@@ -12,11 +12,11 @@ use constant {
 
 =head1 NAME
 
-Item for Async stream
+Item for Async::Stream
 
 =head1 VERSION
 
-Version 0.01
+Version 0.02
 
 =cut
 
@@ -27,13 +27,21 @@ our $VERSION = '0.02';
 
 Creating and managing item for Async::Stream
 
-    use Async::Stream::Item;
+  use Async::Stream::Item;
 
-    my $stream_item = Async::Stream::Item->new($value, $next_item_cb);
-    
+  my $stream_item = Async::Stream::Item->new($value, $next_item_cb);
+		
 =head1 SUBROUTINES/METHODS
 
-=head2 new($val,$generate_next_callback)
+=head2 new($val,$generator_next_item)
+
+Constructor creates instanse of class. Class method gets 2 arguments item's value and generator subroutine referens to generate next item.
+
+  my $i = 0;
+  my $stream_item = Async::Stream::Item->new($i++, sub {
+      my $return_cb = shift;
+      $return_cb->($i++);
+    });
 
 =cut
 
@@ -44,6 +52,10 @@ sub new {
 
 =head2 val()
 
+Method returns item's value.
+
+  my $value = $stream_item->val;
+
 =cut
 
 sub val {
@@ -51,7 +63,13 @@ sub val {
 	$self->[VALUE];
 }
 
-=head2 next(next_callback);
+=head2 next($next_callback);
+	
+Method returns next item in stream. Method gets callback to return next item.
+
+  $stream_item->next(sub {
+      my $next_stream_item = shift;
+    });
 
 =cut
 
@@ -81,16 +99,14 @@ Kirill Sysoev, C<< <k.sysoev at me.com> >>
 
 =head1 BUGS
 
-Please report any bugs or feature requests to C<bug-async-stream at rt.cpan.org>, or through
-the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Async-Stream>.  I will be notified, and then you'll
-automatically be notified of progress on your bug as I make changes.
+Please report any bugs or feature requests to L<https://github.com/pestkam/p5-Async-Stream/issues>.
 
 
 =head1 SUPPORT
 
 You can find documentation for this module with the perldoc command.
 
-    perldoc Async::Stream::Item
+  perldoc Async::Stream::Item
 
 
 You can also look for information at:
