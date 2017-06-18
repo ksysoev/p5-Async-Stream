@@ -27,10 +27,10 @@ Quick summary of what the module does.
 
 Perhaps a little code snippet.
 
-    use Async::Stream;
+		use Async::Stream;
 
-    my $foo = Async::Stream->new();
-    ...
+		my $foo = Async::Stream->new();
+		...
 
 =head1 EXPORT
 
@@ -54,6 +54,13 @@ sub new {
 	bless $self, $class;
 }
 
+sub new_from {
+	my $class = shift;
+	my @item = @_;
+
+	$class->new(sub { shift->(shift @item) })
+}
+
 =head2 head
 
 =cut
@@ -61,6 +68,12 @@ sub new {
 sub head {
 	my $self = shift;
 	$self->{_head};
+}
+
+sub iterator {
+	my $self = shift;
+
+	Async::Stream::Iterator->new($self);
 }
 
 sub each {
@@ -98,7 +111,7 @@ sub reduce  {
 						$item = shift;
 						if (defined $item) {
 							local ${ $pkg . '::a' } = $prev;
-        			local ${ $pkg . '::b' } = $item->val;
+							local ${ $pkg . '::b' } = $item->val;
 							$prev = $code->();
 							$reduce_cb->();
 						} else {
@@ -268,9 +281,99 @@ sub skip {
 	}
 }
 
-sub sort {}
+sub sort {
+	my $self = shift;
+	my $comporator = shift;
 
-sub cut_sort {}
+	my $sorted = 0;
+	my @sorted_array;
+
+	my $pkg = caller;
+
+	my $generator = sub {
+		my $return_cb = shift;
+
+		unless ($sorted) {
+			$self->to_arrayref(sub{
+					my $array = shift;
+					no strict 'refs';
+					local *{ $pkg . '::a' } = *{ __PACKAGE__ . '::a' };
+					local *{ $pkg . '::b' } = *{ __PACKAGE__ . '::b' };
+					@sorted_array = sort { $comporator->() } @{$array};
+					$sorted = 1;
+					$return_cb->(shift @sorted_array);
+				});
+		} else {
+			$return_cb->(shift @sorted_array);
+		}
+	};
+
+	Async::Stream->new($generator)
+}
+
+sub cut_sort {
+	my $self = shift;
+	my $cut = shift;
+	my $comporator = shift;
+
+	my $pkg = caller;
+	
+	my $iterator = $self->iterator;
+
+	my $prev;
+	my @cur_slice;
+	my @sorted_array;
+	my $generator; $generator = sub {
+		my $return_cb = shift;
+		if (@sorted_array) {
+			$return_cb->(shift @sorted_array);
+		} else {
+			unless (defined $prev) {
+				$iterator->next(sub {
+						$prev = shift;
+						if (defined $prev){
+							@cur_slice = ($prev);
+							$generator->($return_cb);
+						} else {
+							$return_cb->(undef);
+						}
+					});
+			} else {
+				$iterator->next(sub {
+						no strict 'refs';
+						my $val = shift;
+						if (defined $val) {
+							local ${ $pkg . '::a' } = $prev;
+							local ${ $pkg . '::b' } = $val;
+							$prev = $val;
+							if ($cut->()) {
+								local *{ $pkg . '::a' } = *{ __PACKAGE__ . '::a' };
+								local *{ $pkg . '::b' } = *{ __PACKAGE__ . '::b' };
+								@sorted_array = sort { $comporator->() } @cur_slice;
+								@cur_slice = ($prev);
+								$return_cb->(shift @sorted_array);
+							} else {
+								push @cur_slice, $prev;
+								$generator->($return_cb);
+							}
+						} else {
+							if (@cur_slice) {
+								local *{ $pkg . '::a' } = *{ __PACKAGE__ . '::a' };
+								local *{ $pkg . '::b' } = *{ __PACKAGE__ . '::b' };
+								@sorted_array = sort { $comporator->() } @cur_slice;
+								@cur_slice = ();
+								$return_cb->(shift @sorted_array);	
+							} else {
+								$return_cb->(undef);
+							}
+						}
+					});
+			}
+		}
+	};
+
+	Async::Stream->new($generator)
+}
 
 sub to_arrayref {
 	my $self = shift;
@@ -307,11 +410,11 @@ sub limit {
 
 	my $generator;
 	if ($limit) {
-		my $iterator = Async::Stream::Iterator->new($self);
+		my $iterator = $self->iterator;
 
 		$generator = sub {
 			my $return_cb = shift;
-			return $return_cb->(undef) if ( $limit-- < 0);
+			return $return_cb->(undef) unless ($limit-- > 0);
 			$iterator->next($return_cb);
 		}
 	} else {
@@ -344,7 +447,7 @@ automatically be notified of progress on your bug as I make changes.
 
 You can find documentation for this module with the perldoc command.
 
-    perldoc Async::Stream
+		perldoc Async::Stream
 
 
 You can also look for information at:
