@@ -80,13 +80,14 @@ sub each {
 	my $self = shift;
 	my $action = shift;
 
-	my $item = $self->head;
+	my $iterator = $self->iterator;
 
 	my $each; $each = sub {
-		$item->next(sub {
-			$item = shift;
-			if (defined $item) {
-				$action->($item->val);
+		my $each = $each;
+		$iterator->next(sub {
+			my $val = shift;
+			if (defined $val) {
+				$action->($val);
 				$each->()
 			}
 		});
@@ -428,6 +429,28 @@ sub limit {
 }
 
 sub merge {}
+
+sub peek {
+	my $self = shift;
+	my $action = shift;
+
+	my $iterator = $self->iterator;
+	my $generator = sub {
+			my $return_cb = shift;
+			$iterator->next(sub {
+					my $val = shift;
+					local $_ = $val;
+					if (defined $_) {
+						$action->();
+						$return_cb->($val);
+					} else {
+						$return_cb->(undef)
+					}
+				});
+		};
+
+	Async::Stream->new($generator);
+}
 
 
 =head1 AUTHOR
