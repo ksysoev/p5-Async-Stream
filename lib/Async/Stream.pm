@@ -62,7 +62,9 @@ sub new_from {
 }
 
 =head2 head
+Method returns stream's head item.
 
+  my $stream_head = $stream->head;
 =cut
 
 sub head {

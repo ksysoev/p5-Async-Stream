@@ -21,5 +21,5 @@ $iterator->next(sub {
 	});
 
 
-diag( "Testing Async::Stream $Async::Stream::Item::VERSION, Perl $], $^X" );
+diag( "Testing Async::Stream $Async::Stream::Iterator::VERSION, Perl $], $^X" );
 	
