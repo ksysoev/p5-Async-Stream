@@ -6,7 +6,7 @@ use Test::More;
 
 use Async::Stream;
 
- plan tests => 16;
+ plan tests => 32;
 
 ### Method new ###
 my $i = 0;
@@ -40,12 +40,20 @@ $test_stream->to_arrayref(sub {
 ### Method min ###
 @test_array = (1,2,3);
 $test_stream = Async::Stream->new_from(@test_array);
-$test_stream->min(sub{is($_[0],'1',"Method min")});
+$test_stream->min(sub{is($_[0],'1',"Method min 1")});
+
+@test_array = (3,2,1);
+$test_stream = Async::Stream->new_from(@test_array);
+$test_stream->min(sub{is($_[0],'1',"Method min 2")});
 
 ### Method max ###
 @test_array = (1,2,3);
 $test_stream = Async::Stream->new_from(@test_array);
-$test_stream->max(sub{is($_[0],'3',"Method max")});
+$test_stream->max(sub{is($_[0],'3',"Method max 1")});
+
+@test_array = (3,2,1);
+$test_stream = Async::Stream->new_from(@test_array);
+$test_stream->max(sub{is($_[0],'3',"Method max 2")});
 
 ### Method sum ###
 @test_array = (1,2,3);
@@ -89,15 +97,66 @@ $test_stream
 @test_array = (1,2,3);
 $test_stream = Async::Stream->new_from(@test_array);
 $test_stream
-	->skip(@test_array - 1)
-	->to_arrayref(sub {is_deeply($_[0], [$test_array[$#test_array]], "Method skip")});
+	->skip(1)
+	->to_arrayref(sub {is_deeply($_[0], [2,3], "Method skip 1")});
+
+$test_stream = Async::Stream->new_from(@test_array);
+$test_stream
+	->skip(0)
+	->to_arrayref(sub {is_deeply($_[0], [@test_array], "Method skip 2")});
+
+$test_stream = Async::Stream->new_from(@test_array);
+$test_stream
+	->skip(-1)
+	->to_arrayref(sub {is_deeply($_[0], [@test_array], "Method skip 3")});
 
 ### Method limit ###
 @test_array = (1,2,3);
 $test_stream = Async::Stream->new_from(@test_array);
 $test_stream
 	->limit(1)
-	->to_arrayref(sub {is_deeply($_[0], [$test_array[0]], "Method limit")});
+	->to_arrayref(sub {is_deeply($_[0], [$test_array[0]], "Method limit 1")});
+
+$test_stream = Async::Stream->new_from(@test_array);
+$test_stream
+	->limit(0)
+	->to_arrayref(sub {is_deeply($_[0], [], "Method limit 2")});
+
+$test_stream = Async::Stream->new_from(@test_array);
+$test_stream
+	->limit(-1)
+	->to_arrayref(sub {is_deeply($_[0], [], "Method limit 3")});
+
+### Method sort ###
+@test_array = (3,1,2);
+$test_stream = Async::Stream->new_from(@test_array);
+$test_stream
+	->sort(sub{$a <=> $b})
+	->to_arrayref(sub{is_deeply($_[0],[sort {$a <=> $b} @test_array],"Method sort")});
+
+### Method cut_sort ###
+@test_array = (2,1,30,20,5,6);
+$test_stream = Async::Stream->new_from(@test_array);
+$test_stream
+	->cut_sort(sub {length($a) != length($b)},sub {$a <=> $b})
+	->to_arrayref(sub{is_deeply($_[0],[1,2,20,30,5,6],"Method cut_sort 1")});
+
+@test_array = (2,1,30,20,5,6);
+$test_stream = Async::Stream->new_from(@test_array);
+$test_stream
+	->limit(0)
+	->cut_sort(sub {length($a) != length($b)},sub {$a <=> $b})
+	->to_arrayref(sub{is_deeply($_[0],[],"Method cut_sort 2")});
+
+### Method peek ###
+@test_array = (1,2,3);
+$test_stream = Async::Stream->new_from(@test_array);
+$test_stream->peek(sub{is($_,shift @test_array,"Method peek")})->to_arrayref(sub {});
+
+### Method each ###
+@test_array = (1,2,3);
+$test_stream = Async::Stream->new_from(@test_array);
+$test_stream->each(sub{is(shift,shift @test_array,"Method each")});
 
 
 

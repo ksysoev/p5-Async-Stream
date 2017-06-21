@@ -269,10 +269,10 @@ sub skip {
 		my $generator; $generator = sub {
 			my $return_cb = shift;
 			$iterator->next(sub {
-					my $val = shift;
-					if ( $skip-- > 0 ){
+					if ( 0 < $skip-- ){
 						$generator->($return_cb);
 					} else {
+						my $val = shift;
 						$return_cb->($val);
 					}
 				});
@@ -398,7 +398,6 @@ sub to_arrayref {
 						}
 					});
 			};$reduce_cb->();
-			weaken $reduce_cb;
 		});
 
 	return $self;
@@ -429,8 +428,6 @@ sub limit {
 
 	Async::Stream->new($generator);
 }
-
-sub merge {}
 
 sub peek {
 	my $self = shift;

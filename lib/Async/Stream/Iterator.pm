@@ -38,11 +38,16 @@ sub new {
 	my $item = $stream->head;
 	bless sub {
 			my $return_cb = shift;
-			return $return_cb->() unless (defined $item);
+			return $return_cb->(undef) unless (defined $item);
 			
 			$item->next(sub {
 				$item = shift;
-				$return_cb->($item->val) if (defined $item);
+				if (defined $item) {
+					$return_cb->($item->val);
+				} else {
+					$return_cb->(undef)
+				}
+				
 			});
 		}, $class;
 }
