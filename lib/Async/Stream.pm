@@ -58,7 +58,7 @@ sub new_from {
 	my $class = shift;
 	my @item = @_;
 
-	$class->new(sub { shift->(shift @item) })
+	$class->new(sub { $_[0]->(@item ? (shift @item) : ()) })
 }
 
 =head2 head
@@ -87,14 +87,15 @@ sub each {
 	my $each; $each = sub {
 		my $each = $each;
 		$iterator->next(sub {
-			my $val = shift;
-			if (defined $val) {
-				$action->($val);
+			if (@_) {
+				$action->($_[0]);
 				$each->()
 			}
 		});
 	}; $each->();
 	weaken $each;
+
+	return $self;
 }
 
 sub reduce  {
@@ -103,26 +104,30 @@ sub reduce  {
 	my $return_cb = shift;
 
 	my $pkg = caller;
-	
-	$self->head->next(sub {
-			my $item = shift;
-			return $return_cb->() unless defined $item;
-			no strict 'refs';
-			my $prev = $item->val;
-			my $reduce_cb; $reduce_cb = sub {
-				$item->next(sub {
-						$item = shift;
-						if (defined $item) {
-							local ${ $pkg . '::a' } = $prev;
-							local ${ $pkg . '::b' } = $item->val;
-							$prev = $code->();
-							$reduce_cb->();
-						} else {
-							$return_cb->($prev);
-						}
-					});
-			};$reduce_cb->();
-			weaken $reduce_cb;
+
+	my $iterator = $self->iterator;
+
+	$iterator->next(sub {
+			if (@_) {
+				my $prev = $_[0];
+				no strict 'refs';
+				my $reduce_cb; $reduce_cb = sub {
+					my $reduce_cb = $reduce_cb;
+					$iterator->next(sub {
+							if (@_) {
+								local *{ $pkg . '::a' } = \$prev;
+								local *{ $pkg . '::b' } = \$_[0];
+								$prev = $code->();
+								$reduce_cb->();
+							} else {
+								$return_cb->($prev);
+							}
+						});
+				};$reduce_cb->();
+				weaken $reduce_cb;
+			}	else {
+				$return_cb->();
+			}
 		});
 
 	return $self;
@@ -159,76 +164,69 @@ sub filter {
 	my $self = shift;
 	my $is_intresting = shift;
 
-	my $item = $self->head;
+	my $iterator = $self->iterator;
 
-	my $grep_cb; $grep_cb = sub {
+	my $next_cb; $next_cb = sub {
 		my $return_cb = shift;
-		$item->next(sub {
-			$item = shift;
-			if (defined $item) { 
-				local $_ = $item->val;
+		$iterator->next(sub {
+			if (@_) { 
+				local *{_} = \$_[0];
 				if ($is_intresting->()) {
-					$return_cb->($item->val);
+					$return_cb->($_[0]);
 				} else {
-					$grep_cb->($return_cb)
+					$next_cb->($return_cb)
 				}
 			} else {
-				$return_cb->(undef)
+				$return_cb->()
 			}
 		});
 	};
 	
-	Async::Stream->new($grep_cb);
+	return $self = Async::Stream->new($next_cb);
 }
 
 sub transform {
 	my $self = shift;
 	my $transform = shift;
-	
-	
-	die   unless ref $transform eq "CODE";
 
-	my $item = $self->head;
+	my $iterator = $self->iterator;
 
-	my $grep_cb; $grep_cb = sub {
+	my $next_cb; $next_cb = sub {
 		my $return_cb = shift;
-		$item->next(sub {
-			$item = shift;
-			if (defined $item) { 
-				local $_ = $item->val;
+		$iterator->next(sub {
+			if (@_) { 
+				local *{_} = \$_[0];
 				$return_cb->($transform->());
 			} else {
-				$return_cb->(undef)
+				$return_cb->()
 			}
 		});
 	};
 	
-	Async::Stream->new($grep_cb);
+	return $self = Async::Stream->new($next_cb);
 }
 
 sub concat {
+	my $self = shift;
 	my @streams = @_;
 
-	my $item  = (shift @streams)->head;
+	my $iterator = $self->iterator;
 
-	my $concat_cb; $concat_cb = sub {
+	my $generator; $generator = sub {
 		my $return_cb = shift;
-		$item->next(sub {
-			$item = shift;
-			if (defined $item) { 
-				$return_cb->($item->val);
-			} else {
-				if (@streams) {
-					$item  = (shift @streams)->head;
-					$concat_cb->($return_cb);
-				} else {;
-					$return_cb->(undef)	
+		$iterator->next(sub {
+				if (@_){
+					$return_cb->($_[0]);
+				} elsif (@streams) {
+					$iterator = (shift @streams)->iterator;
+					$generator->($return_cb);
+				} else {
+					$return_cb->();
 				}
-			}
-		});
+			});
 	};
 
-	Async::Stream->new($concat_cb);
+	return $self = Async::Stream->new($generator);
 }
 
 sub count {
@@ -236,24 +234,20 @@ sub count {
 	my $return_cb = shift;
 
 	my $result = 0;
-	
-	$self->head->next(sub {
-			my $item = shift;
-			return $return_cb->($result) unless defined $item;
-			my $reduce_cb; $reduce_cb = sub {
-				$result++;
-				$item->next(sub {
-						$item = shift;
-						if (defined $item) {
-							$reduce_cb->();
-						} else {
-							$return_cb->($result);
-						}
-					});
-			};$reduce_cb->();
-			weaken $reduce_cb;
-		});
+	my $iterator = $self->iterator;
 
+	my $next_cb ; $next_cb = sub {
+		my $next_cb = $next_cb;
+		$iterator->next(sub {
+				if (@_) {
+					$result++;
+					return $next_cb->();
+				}
+				$return_cb->($result)
+			});
+	}; $next_cb->();
+	weaken $next_cb;
+	
 	return $self;
 }
 
@@ -264,21 +258,23 @@ sub skip {
 	$skip = 0 if $skip < 0;
 
 	if ($skip) {
-		my $iterator = Async::Stream::Iterator->new($self);
-
+		my $iterator = $self->iterator;
 		my $generator; $generator = sub {
 			my $return_cb = shift;
 			$iterator->next(sub {
-					if ( 0 < $skip-- ){
-						$generator->($return_cb);
+					if (@_){
+						if ($skip-- > 0) {
+							$generator->($return_cb);	
+						} else {
+							$return_cb->($_[0]);
+						}
 					} else {
-						my $val = shift;
-						$return_cb->($val);
+						$return_cb->();
 					}
 				});
 		};
 
-		return Async::Stream->new($generator);
+		return $self = Async::Stream->new($generator);
 	} else {
 		return $self;
 	}
@@ -287,31 +283,35 @@ sub skip {
 sub sort {
 	my $self = shift;
 	my $comporator = shift;
+	my $pkg = caller;
 
 	my $sorted = 0;
 	my @sorted_array;
-
-	my $pkg = caller;
+	my $stream = $self;
 
 	my $generator = sub {
 		my $return_cb = shift;
 
 		unless ($sorted) {
-			$self->to_arrayref(sub{
+			$stream->to_arrayref(sub{
 					my $array = shift;
-					no strict 'refs';
-					local *{ $pkg . '::a' } = *{ __PACKAGE__ . '::a' };
-					local *{ $pkg . '::b' } = *{ __PACKAGE__ . '::b' };
-					@sorted_array = sort { $comporator->() } @{$array};
-					$sorted = 1;
-					$return_cb->(shift @sorted_array);
+					if (@{$array}) {
+						no strict 'refs';
+						local *{ $pkg . '::a' } = *{ __PACKAGE__ . '::a' };
+						local *{ $pkg . '::b' } = *{ __PACKAGE__ . '::b' };
+						@sorted_array = sort $comporator @{$array};
+						$sorted = 1;
+						$return_cb->(shift @sorted_array);
+					} else {
+						$return_cb->();
+					}
 				});
 		} else {
-			$return_cb->(shift @sorted_array);
+			$return_cb->(@sorted_array ? shift(@sorted_array) : ());
 		}
 	};
 
-	Async::Stream->new($generator)
+	return $self = Async::Stream->new($generator);
 }
 
 sub cut_sort {
@@ -333,26 +333,25 @@ sub cut_sort {
 		} else {
 			unless (defined $prev) {
 				$iterator->next(sub {
-						$prev = shift;
-						if (defined $prev){
+						if (@_){
+							$prev = $_[0];
 							@cur_slice = ($prev);
 							$generator->($return_cb);
 						} else {
-							$return_cb->(undef);
+							$return_cb->();
 						}
 					});
 			} else {
 				$iterator->next(sub {
 						no strict 'refs';
-						my $val = shift;
-						if (defined $val) {
+						if (@_) {
 							local ${ $pkg . '::a' } = $prev;
-							local ${ $pkg . '::b' } = $val;
-							$prev = $val;
+							local ${ $pkg . '::b' } = $_[0];
+							$prev = $_[0];
 							if ($cut->()) {
 								local *{ $pkg . '::a' } = *{ __PACKAGE__ . '::a' };
 								local *{ $pkg . '::b' } = *{ __PACKAGE__ . '::b' };
-								@sorted_array = sort { $comporator->() } @cur_slice;
+								@sorted_array = sort $comporator @cur_slice;
 								@cur_slice = ($prev);
 								$return_cb->(shift @sorted_array);
 							} else {
@@ -363,11 +362,11 @@ sub cut_sort {
 							if (@cur_slice) {
 								local *{ $pkg . '::a' } = *{ __PACKAGE__ . '::a' };
 								local *{ $pkg . '::b' } = *{ __PACKAGE__ . '::b' };
-								@sorted_array = sort { $comporator->() } @cur_slice;
+								@sorted_array = sort $comporator @cur_slice;
 								@cur_slice = ();
 								$return_cb->(shift @sorted_array);	
 							} else {
-								$return_cb->(undef);
+								$return_cb->();
 							}
 						}
 					});
@@ -375,7 +374,7 @@ sub cut_sort {
 		}
 	};
 
-	Async::Stream->new($generator)
+	return $self = Async::Stream->new($generator)
 }
 
 sub to_arrayref {
@@ -383,25 +382,23 @@ sub to_arrayref {
 	my $return_cb = shift;
 
 	my @result;
-	
-	$self->head->next(sub {
-			my $item = shift;
-			return $return_cb->(\@result) unless defined $item;
-			my $reduce_cb; $reduce_cb = sub {
-				push @result, $item->val;
-				$item->next(sub {
-						$item = shift;
-						if (defined $item) {
-							$reduce_cb->();
-						} else {
-							$return_cb->(\@result);
-						}
-					});
-			};$reduce_cb->();
-		});
+
+	my $iterator = $self->iterator;
+
+	my $next_cb; $next_cb = sub {
+		my $next_cb = $next_cb;
+		$iterator->next(sub {
+				if (@_) {
+					push @result, $_[0];
+					$next_cb->();
+				} else {
+					$return_cb->(\@result);
+				}
+			});
+	};$next_cb->();	
+	weaken $next_cb;
 
 	return $self;
-
 }
 
 sub limit {
@@ -416,17 +413,17 @@ sub limit {
 
 		$generator = sub {
 			my $return_cb = shift;
-			return $return_cb->(undef) unless ($limit-- > 0);
+			return $return_cb->() unless ($limit-- > 0);
 			$iterator->next($return_cb);
 		}
 	} else {
 		$generator = sub {
 			my $return_cb = shift;
-			$return_cb->(undef);
+			$return_cb->();
 		}
 	}
 
-	Async::Stream->new($generator);
+	return $self = Async::Stream->new($generator);
 }
 
 sub peek {
@@ -437,18 +434,17 @@ sub peek {
 	my $generator = sub {
 			my $return_cb = shift;
 			$iterator->next(sub {
-					my $val = shift;
-					local $_ = $val;
-					if (defined $_) {
+					if (@_) {
+						local *{_} = \$_[0];
 						$action->();
-						$return_cb->($val);
+						$return_cb->($_[0]);
 					} else {
-						$return_cb->(undef)
+						$return_cb->()
 					}
 				});
 		};
 
-	Async::Stream->new($generator);
+	return $self = Async::Stream->new($generator);
 }
 
 

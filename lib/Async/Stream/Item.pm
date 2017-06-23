@@ -40,7 +40,11 @@ Constructor creates instanse of class. Class method gets 2 arguments item's valu
   my $i = 0;
   my $stream_item = Async::Stream::Item->new($i++, sub {
       my $return_cb = shift;
-      $return_cb->($i++);
+      if($i < 100){
+				$return_cb->($i++)
+      } else {
+				$return_cb->()
+      }
     });
 
 =cut
@@ -79,14 +83,13 @@ sub next {
 
 	if (ref $self->[NEXT] eq "CODE") {
 		$self->[NEXT](sub {
-				my $val = shift;
-				if (defined $val) {
-					$self->[NEXT] = __PACKAGE__->new($val, $self->[NEXT])	
+				if (@_) {
+					$self->[NEXT] = __PACKAGE__->new($_[0], $self->[NEXT]);
+					$next_cb->($self->[NEXT]);
 				} else {
-					$self->[NEXT] = $val
+					$self->[NEXT] = undef;
+					$next_cb->();
 				}
-				
-				$next_cb->($self->[NEXT]);
 			});
 	} else {
 		$next_cb->($self->[NEXT]);

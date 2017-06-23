@@ -31,23 +31,22 @@ Creating and managing item for Async::Stream
 =head2 new($val,$generate_next_callback)
 
 =cut
-
+use Data::Dumper;
 sub new {
 	my ($class, $stream) = @_;
 
 	my $item = $stream->head;
 	bless sub {
 			my $return_cb = shift;
-			return $return_cb->(undef) unless (defined $item);
+			return $return_cb->() unless (defined $item);
 			
 			$item->next(sub {
-				$item = shift;
-				if (defined $item) {
-					$return_cb->($item->val);
+				if (defined $_[0]) {
+					$item = shift;
+					$return_cb->($item->val)
 				} else {
-					$return_cb->(undef)
+					$return_cb->()
 				}
-				
 			});
 		}, $class;
 }

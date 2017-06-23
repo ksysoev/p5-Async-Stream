@@ -25,7 +25,7 @@ isa_ok($iterator,'Async::Stream::Iterator');
 ### Method to_arrayref ###
 my @test_array = (1,2,3,4,5);
 my $array_to_compare = [@test_array];
-$test_stream = Async::Stream->new(sub{$_[0]->(shift @test_array)});
+$test_stream = Async::Stream->new(sub{$_[0]->(@test_array ? (shift @test_array):())});
 $test_stream->to_arrayref(sub {
 		is_deeply($_[0], $array_to_compare, "Method to_arrayref");
 	});
