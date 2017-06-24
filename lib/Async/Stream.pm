@@ -14,11 +14,11 @@ Async::Stream - it's convinient way to work with async data flow.
 
 =head1 VERSION
 
-Version 0.01
+Version 0.02
 
 =cut
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 
 =head1 SYNOPSIS
@@ -39,10 +39,21 @@ if you don't export anything, such as for a purely object-oriented module.
 
 =head1 SUBROUTINES/METHODS
 
-=head2 new
-	
-=cut
+=head2 new($generator)
 
+Constructor creates instanse of class. Class method gets 1 arguments - generator subroutine referens to generate items.
+Generator will get a callback which it will use for returning result. If generator is exhausted then returning callback is called without arguments.
+
+  my $i = 0;
+  my $stream = Async::Stream->new(sub {
+      $return_cb = shift;
+      if ($i < 10) {
+        $return_cb->($i++);
+      } else {
+        $return_cb->();
+      }
+    });
+=cut
 sub new {
 	my $class = shift;
 	my $next_item_callback = shift;
@@ -54,6 +65,19 @@ sub new {
 	bless $self, $class;
 }
 
+=head2 new_from(@array_of_items)
+
+Constructor creates instanse of class. Class method gets a list of items which are used for generating streams.
+	
+  my @domains = qw(
+    ucoz.com
+    ya.ru
+    googl.com
+  );
+  
+  my $stream = Async::Stream->new_from(@urls)
+
+=cut
 sub new_from {
 	my $class = shift;
 	my @item = @_;
@@ -61,16 +85,23 @@ sub new_from {
 	$class->new(sub { $_[0]->(@item ? (shift @item) : ()) })
 }
 
-=head2 head
-Method returns stream's head item.
+=head2 head()
+
+Method returns stream's head item. Head is a instance of class Async::Stream::Item.
 
   my $stream_head = $stream->head;
 =cut
-
 sub head {
 	my $self = shift;
 	$self->{_head};
 }
+
+=head2 iterator()
+
+Method returns stream's iterator. Iterator is a instance of class Async::Stream::Iterator.
+
+  my $stream_iterator = $stream->iterator;
+=cut
 
 sub iterator {
 	my $self = shift;
@@ -78,6 +109,50 @@ sub iterator {
 	Async::Stream::Iterator->new($self);
 }
 
+=head2 to_arrayref($returing_cb)
+
+Method returns stream's iterator.
+
+  $stream->to_arrayref(sub {
+      $array_ref = shift;
+
+      #...	
+    });
+=cut
+sub to_arrayref {
+	my $self = shift;
+	my $return_cb = shift;
+
+	my @result;
+
+	my $iterator = $self->iterator;
+
+	my $next_cb; $next_cb = sub {
+		my $next_cb = $next_cb;
+		$iterator->next(sub {
+				if (@_) {
+					push @result, $_[0];
+					$next_cb->();
+				} else {
+					$return_cb->(\@result);
+				}
+			});
+	};$next_cb->();	
+	weaken $next_cb;
+
+	return $self;
+}
+
+=head2 each($action)
+
+Method execute action on each item in stream.
+
+  $stream->to_arrayref(sub {
+      $array_ref = shift;
+      
+      #...	
+    });
+=cut
 sub each {
 	my $self = shift;
 	my $action = shift;
@@ -98,6 +173,101 @@ sub each {
 	return $self;
 }
 
+=head2 peek($action)
+
+  $stream->peek(sub { print $_, "\n" })->to_arrayref(sub {print @{$_[0]}});
+=cut
+sub peek {
+	my $self = shift;
+	my $action = shift;
+
+	my $iterator = $self->iterator;
+	my $generator = sub {
+			my $return_cb = shift;
+			$iterator->next(sub {
+					if (@_) {
+						local *{_} = \$_[0];
+						$action->();
+						$return_cb->($_[0]);
+					} else {
+						$return_cb->()
+					}
+				});
+		};
+
+	return $self = Async::Stream->new($generator);
+}
+
+=head2 filter($predicat)
+
+Method filter current stream. Filter works like grep but it affects current stream.
+
+  $stream->filter(sub {$_ % 2})->to_arrayref(sub {print @{$_[0]}});
+
+=cut
+sub filter {
+	my $self = shift;
+	my $is_intresting = shift;
+
+	my $iterator = $self->iterator;
+
+	my $next_cb; $next_cb = sub {
+		my $return_cb = shift;
+		$iterator->next(sub {
+			if (@_) { 
+				local *{_} = \$_[0];
+				if ($is_intresting->()) {
+					$return_cb->($_[0]);
+				} else {
+					$next_cb->($return_cb)
+				}
+			} else {
+				$return_cb->()
+			}
+		});
+	};
+	
+	return $self = Async::Stream->new($next_cb);
+}
+
+=head2 transform($transformer)
+
+Method transform current stream. Transform works like grep but it affects current stream.
+
+  $stream->transform(sub {$_ * 2})->to_arrayref(sub {print @{$_[0]}});
+
+=cut
+sub transform {
+	my $self = shift;
+	my $transform = shift;
+
+	my $iterator = $self->iterator;
+
+	my $next_cb; $next_cb = sub {
+		my $return_cb = shift;
+		$iterator->next(sub {
+			if (@_) { 
+				local *{_} = \$_[0];
+				$return_cb->($transform->());
+			} else {
+				$return_cb->()
+			}
+		});
+	};
+	
+	return $self = Async::Stream->new($next_cb);
+}
+
+=head2 reduce($accumulator, $returing_cb)
+
+  $stream->reduce(
+    sub{ $a + $b }, 
+    sub {
+    	$sum = shift 
+		  #...
+    });
+
+=cut
 sub reduce  {
 	my $self = shift;
 	my $code = shift;
@@ -133,6 +303,14 @@ sub reduce  {
 	return $self;
 }
 
+=head2 sum($returing_cb)
+
+  $stream->reduce(
+    sub {
+    	$sum = shift 
+		  #...
+    });
+=cut
 sub sum {
 	my $self = shift;
 	my $return_cb = shift;
@@ -142,6 +320,14 @@ sub sum {
 	return $self;
 }
 
+=head2 min($returing_cb)
+
+  $stream->min(
+    sub {
+    	$sum = shift 
+		  #...
+    });
+=cut
 sub min {
 	my $self = shift;
 	my $return_cb = shift;
@@ -151,6 +337,14 @@ sub min {
 	return $self;
 }
 
+=head2 max($returing_cb)
+
+  $stream->max(
+    sub {
+    	$sum = shift 
+		  #...
+    });
+=cut
 sub max {
 	my $self = shift;
 	my $return_cb = shift;
@@ -160,52 +354,10 @@ sub max {
 	return $self;
 }
 
-sub filter {
-	my $self = shift;
-	my $is_intresting = shift;
+=head2 concat($another_stream)
 
-	my $iterator = $self->iterator;
-
-	my $next_cb; $next_cb = sub {
-		my $return_cb = shift;
-		$iterator->next(sub {
-			if (@_) { 
-				local *{_} = \$_[0];
-				if ($is_intresting->()) {
-					$return_cb->($_[0]);
-				} else {
-					$next_cb->($return_cb)
-				}
-			} else {
-				$return_cb->()
-			}
-		});
-	};
-	
-	return $self = Async::Stream->new($next_cb);
-}
-
-sub transform {
-	my $self = shift;
-	my $transform = shift;
-
-	my $iterator = $self->iterator;
-
-	my $next_cb; $next_cb = sub {
-		my $return_cb = shift;
-		$iterator->next(sub {
-			if (@_) { 
-				local *{_} = \$_[0];
-				$return_cb->($transform->());
-			} else {
-				$return_cb->()
-			}
-		});
-	};
-	
-	return $self = Async::Stream->new($next_cb);
-}
-
+  $stream->concat($stream1)->to_arrayref(sub {print @{$_[0]}}); 
+=cut
 sub concat {
 	my $self = shift;
 	my @streams = @_;
@@ -229,6 +381,12 @@ sub concat {
 	return $self = Async::Stream->new($generator);
 }
 
+=head2 count($returing_cb)
+
+  $stream->count(sub {
+      $count = shift;
+    }); 
+=cut
 sub count {
 	my $self = shift;
 	my $return_cb = shift;
@@ -251,6 +409,10 @@ sub count {
 	return $self;
 }
 
+=head2 skip($number)
+
+  $stream->skip(5)->to_arrayref(sub {print @{$_[0]}});
+=cut
 sub skip {
 	my $self = shift;
 	my $skip = int(shift);
@@ -280,6 +442,39 @@ sub skip {
 	}
 }
 
+=head2 limit($number)
+
+  $stream->limit(5)->to_arrayref(sub {print @{$_[0]}});
+=cut
+sub limit {
+	my $self = shift;
+	my $limit = int(shift);
+
+	$limit = 0 if $limit < 0;
+
+	my $generator;
+	if ($limit) {
+		my $iterator = $self->iterator;
+
+		$generator = sub {
+			my $return_cb = shift;
+			return $return_cb->() unless ($limit-- > 0);
+			$iterator->next($return_cb);
+		}
+	} else {
+		$generator = sub {
+			my $return_cb = shift;
+			$return_cb->();
+		}
+	}
+
+	return $self = Async::Stream->new($generator);
+}
+
+=head2 sort($comporator)
+
+  $stream->sort(sub{$a <=> $b})->to_arrayref(sub {print @{$_[0]}});
+=cut
 sub sort {
 	my $self = shift;
 	my $comporator = shift;
@@ -314,6 +509,10 @@ sub sort {
 	return $self = Async::Stream->new($generator);
 }
 
+=head2 sort($predicat, $comporator)
+
+  $stream->cut_sort(sub {lenght $a != lenght $b},sub {$a <=> $b})->to_arrayref(sub {print @{$_[0]}});
+=cut
 sub cut_sort {
 	my $self = shift;
 	my $cut = shift;
@@ -376,77 +575,6 @@ sub cut_sort {
 
 	return $self = Async::Stream->new($generator)
 }
-
-sub to_arrayref {
-	my $self = shift;
-	my $return_cb = shift;
-
-	my @result;
-
-	my $iterator = $self->iterator;
-
-	my $next_cb; $next_cb = sub {
-		my $next_cb = $next_cb;
-		$iterator->next(sub {
-				if (@_) {
-					push @result, $_[0];
-					$next_cb->();
-				} else {
-					$return_cb->(\@result);
-				}
-			});
-	};$next_cb->();	
-	weaken $next_cb;
-
-	return $self;
-}
-
-sub limit {
-	my $self = shift;
-	my $limit = int(shift);
-
-	$limit = 0 if $limit < 0;
-
-	my $generator;
-	if ($limit) {
-		my $iterator = $self->iterator;
-
-		$generator = sub {
-			my $return_cb = shift;
-			return $return_cb->() unless ($limit-- > 0);
-			$iterator->next($return_cb);
-		}
-	} else {
-		$generator = sub {
-			my $return_cb = shift;
-			$return_cb->();
-		}
-	}
-
-	return $self = Async::Stream->new($generator);
-}
-
-sub peek {
-	my $self = shift;
-	my $action = shift;
-
-	my $iterator = $self->iterator;
-	my $generator = sub {
-			my $return_cb = shift;
-			$iterator->next(sub {
-					if (@_) {
-						local *{_} = \$_[0];
-						$action->();
-						$return_cb->($_[0]);
-					} else {
-						$return_cb->()
-					}
-				});
-		};
-
-	return $self = Async::Stream->new($generator);
-}
-
 
 =head1 AUTHOR
 
