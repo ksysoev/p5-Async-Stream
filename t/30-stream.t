@@ -6,7 +6,7 @@ use Test::More;
 
 use Async::Stream;
 
- plan tests => 32;
+ plan tests => 33;
 
 ### Method new ###
 my $i = 0;
@@ -74,11 +74,18 @@ $test_stream
 	->filter(sub{$_ != 2})
 	->to_arrayref(sub{is_deeply($_[0],[grep {$_!=2} @test_array],"Method filter")});
 
+### Method smap ###
+@test_array = (1,2,3);
+$test_stream = Async::Stream->new_from(@test_array);
+$test_stream
+	->smap(sub{$_ * 2})
+	->to_arrayref(sub{is_deeply($_[0],[map {$_*2} @test_array],"Method smap")});
+
 ### Method transform ###
 @test_array = (1,2,3);
 $test_stream = Async::Stream->new_from(@test_array);
 $test_stream
-	->transform(sub{$_ * 2})
+	->transform(sub{$_[0]->($_ * 2)})
 	->to_arrayref(sub{is_deeply($_[0],[map {$_*2} @test_array],"Method transform")});
 
 ### Method count ###

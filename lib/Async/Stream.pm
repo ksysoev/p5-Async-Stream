@@ -23,19 +23,30 @@ our $VERSION = '0.02';
 
 =head1 SYNOPSIS
 
-Quick summary of what the module does.
+Module helps to organize your async code to stream.
 
-Perhaps a little code snippet.
+  use Async::Stream;
 
-		use Async::Stream;
+  my @urls = qw(
+      http://ucoz.com
+      http://ya.ru
+      http://google.com
+    );
 
-		my $foo = Async::Stream->new();
-		...
+  my $stream = Async::Stream->new_from(@urls);
 
-=head1 EXPORT
-
-A list of functions that can be exported.  You can delete this section
-if you don't export anything, such as for a purely object-oriented module.
+  $stream
+    ->transform(sub {
+        $return_cb = shift;
+        http_get $_, sub {
+            $return_cb->({headers => $_[0], body => $_[0]})
+          };
+      })
+    ->filter(sub { $_->{headers}->{Status} =~ /^2/ })
+    ->each(sub {
+        my $item = shift;
+        print $item->{body};
+      });
 
 =head1 SUBROUTINES/METHODS
 
@@ -175,6 +186,9 @@ sub each {
 
 =head2 peek($action)
 
+This method helps to debug streams data flow. 
+You can use this method for printing or logging steam data and track data mutation between stream's transformations.
+
   $stream->peek(sub { print $_, "\n" })->to_arrayref(sub {print @{$_[0]}});
 =cut
 sub peek {
@@ -200,7 +214,7 @@ sub peek {
 
 =head2 filter($predicat)
 
-Method filter current stream. Filter works like grep but it affects current stream.
+The method filters current stream. Filter works like lazy grep.
 
   $stream->filter(sub {$_ % 2})->to_arrayref(sub {print @{$_[0]}});
 
@@ -230,14 +244,14 @@ sub filter {
 	return $self = Async::Stream->new($next_cb);
 }
 
-=head2 transform($transformer)
+=head2 smap($transformer)
 
-Method transform current stream. Transform works like grep but it affects current stream.
+Method smap transforms current stream. Transform works like lazy map.
 
   $stream->transform(sub {$_ * 2})->to_arrayref(sub {print @{$_[0]}});
 
 =cut
-sub transform {
+sub smap {
 	my $self = shift;
 	my $transform = shift;
 
@@ -258,7 +272,41 @@ sub transform {
 	return $self = Async::Stream->new($next_cb);
 }
 
+=head2 transform($transformer)
+
+Method transform current stream. Transform works like lazy map with async response. 
+You can use the method for example for async http request or another async operation.
+
+  $stream->transform(sub {
+  	  $return_cb = shift;
+      $return_cb->($_ * 2)
+    })->to_arrayref(sub {print @{$_[0]}});
+
+=cut
+sub transform {
+	my $self = shift;
+	my $transform = shift;
+
+	my $iterator = $self->iterator;
+
+	my $next_cb; $next_cb = sub {
+		my $return_cb = shift;
+		$iterator->next(sub {
+			if (@_) { 
+				local *{_} = \$_[0];
+				$transform->($return_cb);
+			} else {
+				$return_cb->()
+			}
+		});
+	};
+	
+	return $self = Async::Stream->new($next_cb);
+}
+
 =head2 reduce($accumulator, $returing_cb)
+
+Performs a reduction on the items of the stream.
 
   $stream->reduce(
     sub{ $a + $b }, 
@@ -305,7 +353,9 @@ sub reduce  {
 
 =head2 sum($returing_cb)
 
-  $stream->reduce(
+The method computes sum of all items in stream.
+
+  $stream->sum(
     sub {
     	$sum = shift 
 		  #...
@@ -321,6 +371,8 @@ sub sum {
 }
 
 =head2 min($returing_cb)
+
+The method finds out minimum item among all items in stream.
 
   $stream->min(
     sub {
@@ -339,6 +391,8 @@ sub min {
 
 =head2 max($returing_cb)
 
+The method finds out maximum item among all items in stream.
+
   $stream->max(
     sub {
     	$sum = shift 
@@ -354,7 +408,9 @@ sub max {
 	return $self;
 }
 
-=head2 concat($another_stream)
+=head2 concat(@list_of_another_streams)
+
+The method concatenates several streams.
 
   $stream->concat($stream1)->to_arrayref(sub {print @{$_[0]}}); 
 =cut
@@ -383,6 +439,8 @@ sub concat {
 
 =head2 count($returing_cb)
 
+The method counts number items in streams.
+
   $stream->count(sub {
       $count = shift;
     }); 
@@ -410,6 +468,8 @@ sub count {
 }
 
 =head2 skip($number)
+
+The method skips $number items in stream.
 
   $stream->skip(5)->to_arrayref(sub {print @{$_[0]}});
 =cut
@@ -444,6 +504,8 @@ sub skip {
 
 =head2 limit($number)
 
+The method limits $number items in stream.
+
   $stream->limit(5)->to_arrayref(sub {print @{$_[0]}});
 =cut
 sub limit {
@@ -472,6 +534,8 @@ sub limit {
 }
 
 =head2 sort($comporator)
+
+The method sorts whole stream.
 
   $stream->sort(sub{$a <=> $b})->to_arrayref(sub {print @{$_[0]}});
 =cut
@@ -509,7 +573,10 @@ sub sort {
 	return $self = Async::Stream->new($generator);
 }
 
-=head2 sort($predicat, $comporator)
+=head2 cut_sort($predicat, $comporator)
+
+Sometimes stream can be infinity and you can't you $stream->sort, you need certain parts of streams
+for example cut part by lenght of items.
 
   $stream->cut_sort(sub {lenght $a != lenght $b},sub {$a <=> $b})->to_arrayref(sub {print @{$_[0]}});
 =cut
@@ -582,44 +649,13 @@ Kirill Sysoev, C<< <k.sysoev at me.com> >>
 
 =head1 BUGS
 
-Please report any bugs or feature requests to C<bug-async-stream at rt.cpan.org>, or through
-the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Async-Stream>.  I will be notified, and then you'll
-automatically be notified of progress on your bug as I make changes.
-
-
-
+Please report any bugs or feature requests to L<https://github.com/pestkam/p5-Async-Stream/issues>.
 
 =head1 SUPPORT
 
 You can find documentation for this module with the perldoc command.
 
-		perldoc Async::Stream
-
-
-You can also look for information at:
-
-=over 4
-
-=item * RT: CPAN's request tracker (report bugs here)
-
-L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=Async-Stream>
-
-=item * AnnoCPAN: Annotated CPAN documentation
-
-L<http://annocpan.org/dist/Async-Stream>
-
-=item * CPAN Ratings
-
-L<http://cpanratings.perl.org/d/Async-Stream>
-
-=item * Search CPAN
-
-L<http://search.cpan.org/dist/Async-Stream/>
-
-=back
-
-
-=head1 ACKNOWLEDGEMENTS
+  perldoc Async::Stream::Item
 
 
 =head1 LICENSE AND COPYRIGHT
@@ -631,37 +667,6 @@ under the terms of the the Artistic License (2.0). You may obtain a
 copy of the full license at:
 
 L<http://www.perlfoundation.org/artistic_license_2_0>
-
-Any use, modification, and distribution of the Standard or Modified
-Versions is governed by this Artistic License. By using, modifying or
-distributing the Package, you accept this license. Do not use, modify,
-or distribute the Package, if you do not accept this license.
-
-If your Modified Version has been derived from a Modified Version made
-by someone other than you, you are nevertheless required to ensure that
-your Modified Version complies with the requirements of this license.
-
-This license does not grant you the right to use any trademark, service
-mark, tradename, or logo of the Copyright Holder.
-
-This license includes the non-exclusive, worldwide, free-of-charge
-patent license to make, have made, use, offer to sell, sell, import and
-otherwise transfer the Package with respect to any patent claims
-licensable by the Copyright Holder that are necessarily infringed by the
-Package. If you institute patent litigation (including a cross-claim or
-counterclaim) against any party alleging that the Package constitutes
-direct or contributory patent infringement, then this Artistic License
-to you shall terminate on the date that such litigation is filed.
-
-Disclaimer of Warranty: THE PACKAGE IS PROVIDED BY THE COPYRIGHT HOLDER
-AND CONTRIBUTORS "AS IS' AND WITHOUT ANY EXPRESS OR IMPLIED WARRANTIES.
-THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
-PURPOSE, OR NON-INFRINGEMENT ARE DISCLAIMED TO THE EXTENT PERMITTED BY
-YOUR LOCAL LAW. UNLESS REQUIRED BY LAW, NO COPYRIGHT HOLDER OR
-CONTRIBUTOR WILL BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, OR
-CONSEQUENTIAL DAMAGES ARISING IN ANY WAY OUT OF THE USE OF THE PACKAGE,
-EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 
 =cut
 
