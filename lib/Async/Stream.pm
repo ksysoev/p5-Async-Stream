@@ -73,7 +73,7 @@ sub new {
 			_head =>  Async::Stream::Item->new(undef, $next_item_callback),
 		};
 
-	bless $self, $class;
+	return bless $self, $class;
 }
 
 =head2 new_from(@array_of_items)
@@ -93,7 +93,7 @@ sub new_from {
 	my $class = shift;
 	my @item = @_;
 
-	$class->new(sub { $_[0]->(@item ? (shift @item) : ()) })
+	return $class->new(sub { $_[0]->(@item ? (shift @item) : ()) })
 }
 
 =head2 head()
@@ -104,7 +104,7 @@ Method returns stream's head item. Head is a instance of class Async::Stream::It
 =cut
 sub head {
 	my $self = shift;
-	$self->{_head};
+	return $self->{_head};
 }
 
 =head2 iterator()
@@ -117,7 +117,7 @@ Method returns stream's iterator. Iterator is a instance of class Async::Stream:
 sub iterator {
 	my $self = shift;
 
-	Async::Stream::Iterator->new($self);
+	return Async::Stream::Iterator->new($self);
 }
 
 =head2 to_arrayref($returing_cb)
@@ -148,7 +148,7 @@ sub to_arrayref {
 					$return_cb->(\@result);
 				}
 			});
-	};$next_cb->();	
+	};$next_cb->();
 	weaken $next_cb;
 
 	return $self;
@@ -228,7 +228,7 @@ sub filter {
 	my $next_cb; $next_cb = sub {
 		my $return_cb = shift;
 		$iterator->next(sub {
-			if (@_) { 
+			if (@_) {
 				local *{_} = \$_[0];
 				if ($is_intresting->()) {
 					$return_cb->($_[0]);
@@ -240,7 +240,7 @@ sub filter {
 			}
 		});
 	};
-	
+
 	return $self = Async::Stream->new($next_cb);
 }
 
@@ -260,7 +260,7 @@ sub smap {
 	my $next_cb; $next_cb = sub {
 		my $return_cb = shift;
 		$iterator->next(sub {
-			if (@_) { 
+			if (@_) {
 				local *{_} = \$_[0];
 				$return_cb->($transform->());
 			} else {
@@ -268,7 +268,7 @@ sub smap {
 			}
 		});
 	};
-	
+
 	return $self = Async::Stream->new($next_cb);
 }
 
@@ -292,7 +292,7 @@ sub transform {
 	my $next_cb; $next_cb = sub {
 		my $return_cb = shift;
 		$iterator->next(sub {
-			if (@_) { 
+			if (@_) {
 				local *{_} = \$_[0];
 				$transform->($return_cb);
 			} else {
@@ -300,7 +300,7 @@ sub transform {
 			}
 		});
 	};
-	
+
 	return $self = Async::Stream->new($next_cb);
 }
 
@@ -343,7 +343,7 @@ sub reduce  {
 						});
 				};$reduce_cb->();
 				weaken $reduce_cb;
-			}	else {
+			} else {
 				$return_cb->();
 			}
 		});
@@ -463,7 +463,7 @@ sub count {
 			});
 	}; $next_cb->();
 	weaken $next_cb;
-	
+
 	return $self;
 }
 
@@ -475,9 +475,9 @@ The method skips $number items in stream.
 =cut
 sub skip {
 	my $self = shift;
-	my $skip = int(shift);
+	my $skip = int shift;
 
-	$skip = 0 if $skip < 0;
+	if ($skip < 0) { $skip = 0 };
 
 	if ($skip) {
 		my $iterator = $self->iterator;
@@ -486,7 +486,7 @@ sub skip {
 			$iterator->next(sub {
 					if (@_){
 						if ($skip-- > 0) {
-							$generator->($return_cb);	
+							$generator->($return_cb);
 						} else {
 							$return_cb->($_[0]);
 						}
@@ -510,9 +510,9 @@ The method limits $number items in stream.
 =cut
 sub limit {
 	my $self = shift;
-	my $limit = int(shift);
+	my $limit = int shift;
 
-	$limit = 0 if $limit < 0;
+	if ($limit < 0) {$limit = 0}
 
 	my $generator;
 	if ($limit) {
@@ -520,7 +520,7 @@ sub limit {
 
 		$generator = sub {
 			my $return_cb = shift;
-			return $return_cb->() unless ($limit-- > 0);
+			return $return_cb->() if ($limit-- <= 0);
 			$iterator->next($return_cb);
 		}
 	} else {
@@ -551,14 +551,16 @@ sub sort {
 	my $generator = sub {
 		my $return_cb = shift;
 
-		unless ($sorted) {
+		if (!$sorted) {
 			$stream->to_arrayref(sub{
 					my $array = shift;
 					if (@{$array}) {
-						no strict 'refs';
-						local *{ $pkg . '::a' } = *{ __PACKAGE__ . '::a' };
-						local *{ $pkg . '::b' } = *{ __PACKAGE__ . '::b' };
-						@sorted_array = sort $comporator @{$array};
+						{
+							no strict 'refs';
+							local *{ $pkg . '::a' } = *{ __PACKAGE__ . '::a' };
+							local *{ $pkg . '::b' } = *{ __PACKAGE__ . '::b' };
+							@sorted_array = sort $comporator @{$array};
+						}
 						$sorted = 1;
 						$return_cb->(shift @sorted_array);
 					} else {
@@ -586,7 +588,7 @@ sub cut_sort {
 	my $comporator = shift;
 
 	my $pkg = caller;
-	
+
 	my $iterator = $self->iterator;
 
 	my $prev;
@@ -597,7 +599,7 @@ sub cut_sort {
 		if (@sorted_array) {
 			$return_cb->(shift @sorted_array);
 		} else {
-			unless (defined $prev) {
+			if (!defined $prev) {
 				$iterator->next(sub {
 						if (@_){
 							$prev = $_[0];
@@ -630,7 +632,7 @@ sub cut_sort {
 								local *{ $pkg . '::b' } = *{ __PACKAGE__ . '::b' };
 								@sorted_array = sort $comporator @cur_slice;
 								@cur_slice = ();
-								$return_cb->(shift @sorted_array);	
+								$return_cb->(shift @sorted_array);
 							} else {
 								$return_cb->();
 							}
@@ -647,7 +649,7 @@ sub cut_sort {
 
 Kirill Sysoev, C<< <k.sysoev at me.com> >>
 
-=head1 BUGS
+=head1 BUGS AND LIMITATIONS
 
 Please report any bugs or feature requests to L<https://github.com/pestkam/p5-Async-Stream/issues>.
 
@@ -667,7 +669,6 @@ under the terms of the the Artistic License (2.0). You may obtain a
 copy of the full license at:
 
 L<http://www.perlfoundation.org/artistic_license_2_0>
-
 =cut
 
 1; # End of Async::Stream

@@ -52,7 +52,7 @@ Class method gets 2 arguments item's value and generator subroutine referens to 
 
 sub new {
 	my ($class, $val, $next) = @_;
-	bless [ $val, $next ], $class;
+	return bless [ $val, $next ], $class;
 }
 
 =head2 val()
@@ -65,7 +65,7 @@ Method returns item's value.
 
 sub val {
 	my $self = shift;
-	$self->[VALUE];
+	return $self->[VALUE];
 }
 
 =head2 next($next_callback);
@@ -95,6 +95,8 @@ sub next {
 	} else {
 		$next_cb->($self->[NEXT]);
 	}
+	
+	return;
 }
 
 =head1 AUTHOR

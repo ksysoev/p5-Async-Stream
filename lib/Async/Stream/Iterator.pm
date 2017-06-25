@@ -39,10 +39,11 @@ sub new {
 	my ($class, $stream) = @_;
 
 	my $item = $stream->head;
-	bless sub {
+
+	return bless sub {
 			my $return_cb = shift;
-			return $return_cb->() unless (defined $item);
-			
+			return $return_cb->() if (!defined $item);
+
 			$item->next(sub {
 				if (defined $_[0]) {
 					$item = shift;
@@ -66,9 +67,11 @@ Method gets returning callback and call that when iterator ready to return next 
 sub next {
 	my $self = shift;
 	my $return_cb = shift;
-	$self->($return_cb);
-}
 
+	$self->($return_cb);
+
+	return;
+}
 
 =head1 AUTHOR
 
