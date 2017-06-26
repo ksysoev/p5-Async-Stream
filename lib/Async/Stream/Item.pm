@@ -1,6 +1,6 @@
 package Async::Stream::Item;
 
-use 5.006;
+use 5.010;
 use strict;
 use warnings;
 
