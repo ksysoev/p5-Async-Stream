@@ -8,17 +8,19 @@ use Async::Stream::Item;
 use Async::Stream::Iterator;
 use Scalar::Util qw(weaken);
 
+use Carp;
+
 =head1 NAME
 
 Async::Stream - it's convinient way to work with async data flow.
 
 =head1 VERSION
 
-Version 0.02
+Version 0.03
 
 =cut
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 
 =head1 SYNOPSIS
@@ -67,10 +69,14 @@ Generator will get a callback which it will use for returning result. If generat
 =cut
 sub new {
 	my $class = shift;
-	my $next_item_callback = shift;
+	my $generator = shift;
+
+	if (ref $generator ne 'CODE') {
+		croak 'First argument can be only subrotine reference'
+	}
 
 	my $self = {
-			_head =>  Async::Stream::Item->new(undef, $next_item_callback),
+			_head =>  Async::Stream::Item->new(undef, $generator),
 		};
 
 	return bless $self, $class;
@@ -103,8 +109,7 @@ Method returns stream's head item. Head is a instance of class Async::Stream::It
   my $stream_head = $stream->head;
 =cut
 sub head {
-	my $self = shift;
-	return $self->{_head};
+	return $_[0]->{_head};
 }
 
 =head2 iterator()
@@ -115,9 +120,7 @@ Method returns stream's iterator. Iterator is a instance of class Async::Stream:
 =cut
 
 sub iterator {
-	my $self = shift;
-
-	return Async::Stream::Iterator->new($self);
+	return Async::Stream::Iterator->new($_[0]);
 }
 
 =head2 to_arrayref($returing_cb)
@@ -133,6 +136,10 @@ Method returns stream's iterator.
 sub to_arrayref {
 	my $self = shift;
 	my $return_cb = shift;
+
+	if (ref $return_cb ne 'CODE') {
+		croak 'First argument can be only subrotine reference'
+	}
 
 	my @result;
 
@@ -168,6 +175,10 @@ sub each {
 	my $self = shift;
 	my $action = shift;
 
+	if (ref $action ne 'CODE') {
+		croak 'First argument can be only subrotine reference'
+	}
+
 	my $iterator = $self->iterator;
 
 	my $each; $each = sub {
@@ -194,6 +205,10 @@ You can use this method for printing or logging steam data and track data mutati
 sub peek {
 	my $self = shift;
 	my $action = shift;
+
+	if (ref $action ne 'CODE') {
+		croak 'First argument can be only subrotine reference'
+	}
 
 	my $iterator = $self->iterator;
 	my $generator = sub {
@@ -222,6 +237,10 @@ The method filters current stream. Filter works like lazy grep.
 sub filter {
 	my $self = shift;
 	my $is_intresting = shift;
+
+	if (ref $is_intresting ne 'CODE') {
+		croak 'First argument can be only subrotine reference'
+	}
 
 	my $iterator = $self->iterator;
 
@@ -255,6 +274,10 @@ sub smap {
 	my $self = shift;
 	my $transform = shift;
 
+	if (ref $transform ne 'CODE') {
+		croak 'First argument can be only subrotine reference'
+	}
+
 	my $iterator = $self->iterator;
 
 	my $next_cb; $next_cb = sub {
@@ -286,6 +309,10 @@ You can use the method for example for async http request or another async opera
 sub transform {
 	my $self = shift;
 	my $transform = shift;
+
+	if (ref $transform ne 'CODE') {
+		croak 'First argument can be only subrotine reference'
+	}
 
 	my $iterator = $self->iterator;
 
@@ -320,6 +347,10 @@ sub reduce  {
 	my $self = shift;
 	my $code = shift;
 	my $return_cb = shift;
+
+	if (ref $return_cb ne 'CODE' or ref $code ne 'CODE') {
+		croak 'First and Second arguments can be only subrotine references'
+	}
 
 	my $pkg = caller;
 
@@ -365,6 +396,10 @@ sub sum {
 	my $self = shift;
 	my $return_cb = shift;
 
+	if (ref $return_cb ne 'CODE') {
+		croak 'First argument can be only subrotine reference'
+	}
+
 	$self->reduce(sub{$a+$b}, $return_cb);
 
 	return $self;
@@ -383,6 +418,10 @@ The method finds out minimum item among all items in stream.
 sub min {
 	my $self = shift;
 	my $return_cb = shift;
+
+	if (ref $return_cb ne 'CODE') {
+		croak 'First argument can be only subrotine reference'
+	}
 
 	$self->reduce(sub{$a < $b ? $a : $b}, $return_cb);
 
@@ -403,6 +442,10 @@ sub max {
 	my $self = shift;
 	my $return_cb = shift;
 
+	if (ref $return_cb ne 'CODE') {
+		croak 'First argument can be only subrotine reference'
+	}
+
 	$self->reduce(sub{$a > $b ? $a : $b}, $return_cb);
 
 	return $self;
@@ -417,6 +460,12 @@ The method concatenates several streams.
 sub concat {
 	my $self = shift;
 	my @streams = @_;
+
+	for my $stream (@streams) {
+		if (!$stream->isa('Async::Stream')) {
+			croak "First argument can be list of instances of Async::Stream or instance of derived class"
+		}
+	}
 
 	my $iterator = $self->iterator;
 
@@ -449,6 +498,10 @@ sub count {
 	my $self = shift;
 	my $return_cb = shift;
 
+	if (ref $return_cb ne 'CODE') {
+		croak 'First argument can be only subrotine reference'
+	}
+
 	my $result = 0;
 	my $iterator = $self->iterator;
 
@@ -477,7 +530,9 @@ sub skip {
 	my $self = shift;
 	my $skip = int shift;
 
-	if ($skip < 0) { $skip = 0 };
+	if ($skip < 0) {
+		croak 'First argument can be only non-negative integer'
+	};
 
 	if ($skip) {
 		my $iterator = $self->iterator;
@@ -512,7 +567,9 @@ sub limit {
 	my $self = shift;
 	my $limit = int shift;
 
-	if ($limit < 0) {$limit = 0}
+	if ($limit < 0) {
+		croak 'First argument can be only non-negative integer'
+	}
 
 	my $generator;
 	if ($limit) {
@@ -542,6 +599,11 @@ The method sorts whole stream.
 sub sort {
 	my $self = shift;
 	my $comporator = shift;
+
+	if (ref $comporator ne 'CODE') {
+		croak 'First argument can be only subrotine reference'
+	}
+
 	my $pkg = caller;
 
 	my $sorted = 0;
@@ -586,6 +648,10 @@ sub cut_sort {
 	my $self = shift;
 	my $cut = shift;
 	my $comporator = shift;
+
+	if (ref $cut ne 'CODE' or ref $comporator ne 'CODE') {
+		croak 'First and Second arguments can be only subrotine references'
+	}
 
 	my $pkg = caller;
 

@@ -6,7 +6,7 @@ use Test::More;
 
 use Async::Stream::Item;
 
-plan tests => 3;
+plan tests => 5;
 
 my $i = 0;
 my $item = Async::Stream::Item->new(
@@ -18,6 +18,9 @@ my $item = Async::Stream::Item->new(
 
 isa_ok($item,'Async::Stream::Item');
 
+eval {Async::Stream::Item->new(1, 'bad argument')};
+ok($@, "Constructor with bad argument");
+
 is($item->val, 0, "Return item's value");
 
 $item->next(sub {
@@ -25,6 +28,8 @@ $item->next(sub {
 		is($next_item->val, 1, "Get next item");		
 	});
 
+eval {$item->next('bad argument')};
+ok($@, "Method next with bad argument");
 
 diag( "Testing Async::Stream $Async::Stream::Item::VERSION, Perl $], $^X" );
 	

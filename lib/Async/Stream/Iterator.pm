@@ -4,6 +4,7 @@ use 5.006;
 use strict;
 use warnings;
 
+use Carp;
 
 =head1 NAME
 
@@ -11,11 +12,11 @@ Iterator for Async stream
 
 =head1 VERSION
 
-Version 0.01
+Version 0.02
 
 =cut
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 
 =head1 SYNOPSIS
@@ -37,6 +38,10 @@ Class method gets 1 arguments stream from which will be created iterator.
 =cut
 sub new {
 	my ($class, $stream) = @_;
+
+	if (!$stream->isa('Async::Stream')) {
+		croak "First argument can be only instance of Async::Stream or instance of derived class";
+	}
 
 	my $item = $stream->head;
 
@@ -67,6 +72,10 @@ Method gets returning callback and call that when iterator ready to return next 
 sub next {
 	my $self = shift;
 	my $return_cb = shift;
+
+	if (ref $return_cb ne 'CODE') {
+		croak "First argument can be only subroutine reference"
+	}
 
 	$self->($return_cb);
 

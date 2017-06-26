@@ -4,6 +4,8 @@ use 5.006;
 use strict;
 use warnings;
 
+use Carp;
+
 
 use constant {
 	VALUE => 0,
@@ -16,11 +18,11 @@ Item for Async::Stream
 
 =head1 VERSION
 
-Version 0.02
+Version 0.03
 
 =cut
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 
 =head1 SYNOPSIS
@@ -33,7 +35,7 @@ Creating and managing item for Async::Stream
 		
 =head1 SUBROUTINES/METHODS
 
-=head2 new($val,$generator_next_item)
+=head2 new($val,$generator)
 
 Constructor creates instanse of class. 
 Class method gets 2 arguments item's value and generator subroutine referens to generate next item.
@@ -52,6 +54,11 @@ Class method gets 2 arguments item's value and generator subroutine referens to 
 
 sub new {
 	my ($class, $val, $next) = @_;
+
+	if (ref $next ne "CODE" and ref $next ne $class) {
+		croak "Second argument can be only subrotine reference or instance of class $class ";
+	}
+
 	return bless [ $val, $next ], $class;
 }
 
@@ -64,8 +71,7 @@ Method returns item's value.
 =cut
 
 sub val {
-	my $self = shift;
-	return $self->[VALUE];
+	return $_[0]->[VALUE];
 }
 
 =head2 next($next_callback);
@@ -81,6 +87,10 @@ Method returns next item in stream. Method gets callback to return next item.
 sub next {
 	my $self = shift;
 	my $next_cb = shift;
+
+	if (ref $next_cb ne "CODE") {
+		croak "First argument can be only subroutine reference";
+	}
 
 	if (ref $self->[NEXT] eq "CODE") {
 		$self->[NEXT](sub {
