@@ -16,7 +16,7 @@ Async::Stream - it's convinient way to work with async data flow.
 
 =head1 VERSION
 
-Version 0.03
+Version 0.04
 
 =cut
 
