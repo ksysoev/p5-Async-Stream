@@ -10,6 +10,7 @@ use Carp;
 use constant {
 	VALUE => 0,
 	NEXT  => 1,
+	QUEUE => 2,
 };
 
 =head1 NAME
@@ -59,7 +60,7 @@ sub new {
 		croak "Second argument can be only subrotine reference or instance of class $class ";
 	}
 
-	return bless [ $val, $next ], $class;
+	return bless [ $val, $next, []], $class;
 }
 
 =head2 val()
@@ -93,15 +94,22 @@ sub next {
 	}
 
 	if (ref $self->[NEXT] eq "CODE") {
-		$self->[NEXT](sub {
+		push @{$self->[QUEUE]}, $next_cb;
+		if (@{$self->[QUEUE]} == 1) {
+			$self->[NEXT](sub {
+				my @response;
 				if (@_) {
-					$self->[NEXT] = __PACKAGE__->new($_[0], $self->[NEXT]);
-					$next_cb->($self->[NEXT]);
+					$self->[NEXT] = ref($self)->new($_[0], $self->[NEXT]);
+					@response = ($self->[NEXT]);
 				} else {
 					$self->[NEXT] = undef;
-					$next_cb->();
+				}
+
+				for my $next_cb (@{$self->[QUEUE]}) {
+					$next_cb->(@response);
 				}
 			});
+		}
 	} else {
 		$next_cb->($self->[NEXT]);
 	}
