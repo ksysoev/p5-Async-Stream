@@ -14,14 +14,15 @@ use Carp;
 
 Async::Stream - it's convinient way to work with async data flow.
 
+IMPORTANT! PUBLIC INTERFACE IS CHANGING, DO NOT USE IN PRODACTION BEFORE VERSION 1.0.
+
 =head1 VERSION
 
 Version 0.04
 
 =cut
 
-our $VERSION = '0.03';
-
+our $VERSION = '0.05';
 
 =head1 SYNOPSIS
 
@@ -45,7 +46,7 @@ Module helps to organize your async code to stream.
           };
       })
     ->filter(sub { $_->{headers}->{Status} =~ /^2/ })
-    ->each(sub {
+    ->for_each(sub {
         my $item = shift;
         print $item->{body};
       });
@@ -54,8 +55,10 @@ Module helps to organize your async code to stream.
 
 =head2 new($generator)
 
-Constructor creates instanse of class. Class method gets 1 arguments - generator subroutine referens to generate items.
-Generator will get a callback which it will use for returning result. If generator is exhausted then returning callback is called without arguments.
+Constructor creates instanse of class. 
+Class method gets 1 arguments - generator subroutine referens to generate items.
+Generator will get a callback which it will use for returning result. 
+If generator is exhausted then returning callback is called without arguments.
 
   my $i = 0;
   my $stream = Async::Stream->new(sub {
@@ -70,21 +73,28 @@ Generator will get a callback which it will use for returning result. If generat
 sub new {
 	my $class = shift;
 	my $generator = shift;
+	my %args = @_;
 
 	if (ref $generator ne 'CODE') {
-		croak 'First argument can be only subrotine reference'
+		croak 'First argument can be only subrotine reference';
+	} elsif (defined $args{prefetch} and $args{prefetch} < 0) {
+		croak 'Prefetch can\'t be less then zero';
 	}
 
-	my $self = {
-			_head =>  Async::Stream::Item->new(undef, $generator),
-		};
+	my $self = bless {
+			_head =>  undef,
+			_prefetch => int($args{prefetch} // 0),
+		}, $class;
 
-	return bless $self, $class;
+	$self->_set_head($generator);
+
+	return $self;
 }
 
 =head2 new_from(@array_of_items)
 
-Constructor creates instanse of class. Class method gets a list of items which are used for generating streams.
+Constructor creates instanse of class. 
+Class method gets a list of items which are used for generating streams.
 	
   my @domains = qw(
     ucoz.com
@@ -97,14 +107,15 @@ Constructor creates instanse of class. Class method gets a list of items which a
 =cut
 sub new_from {
 	my $class = shift;
-	my @item = @_;
+	my $items = \@_;
 
-	return $class->new(sub { $_[0]->(@item ? (shift @item) : ()) })
+	return $class->new(sub { $_[0]->(@{$items} ? (shift @{$items}) : ()) })
 }
 
 =head2 head()
 
-Method returns stream's head item. Head is a instance of class Async::Stream::Item.
+Method returns stream's head item. 
+Head is a instance of class Async::Stream::Item.
 
   my $stream_head = $stream->head;
 =cut
@@ -112,9 +123,31 @@ sub head {
 	return $_[0]->{_head};
 }
 
+=head2 prefetch($number)
+
+Method returns stream's head item. 
+Head is a instance of class Async::Stream::Item.
+
+  my $stream_head = $stream->head;
+=cut
+sub set_prefetch {
+	my $self = shift;
+	my $prefetch = shift // 0;
+
+	if ($prefetch < 0) {
+		croak 'Prefetch can\'t be less then zero';
+	}
+
+	$self->{_prefetch} = $prefetch;
+
+	return $self;
+}
+
+
 =head2 iterator()
 
-Method returns stream's iterator. Iterator is a instance of class Async::Stream::Iterator.
+Method returns stream's iterator. 
+Iterator is a instance of class Async::Stream::Iterator.
 
   my $stream_iterator = $stream->iterator;
 =cut
@@ -161,7 +194,7 @@ sub to_arrayref {
 	return $self;
 }
 
-=head2 each($action)
+=head2 for_each($action)
 
 Method execute action on each item in stream.
 
@@ -171,7 +204,7 @@ Method execute action on each item in stream.
       #...	
     });
 =cut
-sub each {
+sub for_each {
 	my $self = shift;
 	my $action = shift;
 
@@ -198,7 +231,8 @@ sub each {
 =head2 peek($action)
 
 This method helps to debug streams data flow. 
-You can use this method for printing or logging steam data and track data mutation between stream's transformations.
+You can use this method for printing or logging steam data and track data 
+mutation between stream's transformations.
 
   $stream->peek(sub { print $_, "\n" })->to_arrayref(sub {print @{$_[0]}});
 =cut
@@ -224,7 +258,9 @@ sub peek {
 				});
 		};
 
-	return $self = Async::Stream->new($generator);
+	$self->_set_head($generator, prefetch => 0);
+
+	return $self;
 }
 
 =head2 filter($predicat)
@@ -260,7 +296,9 @@ sub filter {
 		});
 	};
 
-	return $self = Async::Stream->new($next_cb);
+	$self->_set_head($next_cb, prefetch => 0);
+
+	return $self;
 }
 
 =head2 smap($transformer)
@@ -292,13 +330,17 @@ sub smap {
 		});
 	};
 
-	return $self = Async::Stream->new($next_cb);
+	$self->_set_head($next_cb, prefetch => 0);
+
+	return $self;
 }
 
 =head2 transform($transformer)
 
-Method transform current stream. Transform works like lazy map with async response. 
-You can use the method for example for async http request or another async operation.
+Method transform current stream. 
+Transform works like lazy map with async response. 
+You can use the method for example for async http request or another async 
+operation.
 
   $stream->transform(sub {
   	  $return_cb = shift;
@@ -328,7 +370,9 @@ sub transform {
 		});
 	};
 
-	return $self = Async::Stream->new($next_cb);
+	$self->_set_head($next_cb);
+
+	return $self;
 }
 
 =head2 reduce($accumulator, $returing_cb)
@@ -359,14 +403,17 @@ sub reduce  {
 	$iterator->next(sub {
 			if (@_) {
 				my $prev = $_[0];
-				no strict 'refs';
+				
 				my $reduce_cb; $reduce_cb = sub {
 					my $reduce_cb = $reduce_cb;
 					$iterator->next(sub {
 							if (@_) {
-								local *{ $pkg . '::a' } = \$prev;
-								local *{ $pkg . '::b' } = \$_[0];
-								$prev = $code->();
+								{
+									no strict 'refs';
+									local *{ $pkg . '::a' } = \$prev;
+									local *{ $pkg . '::b' } = \$_[0];
+									$prev = $code->();
+								}
 								$reduce_cb->();
 							} else {
 								$return_cb->($prev);
@@ -463,7 +510,7 @@ sub concat {
 
 	for my $stream (@streams) {
 		if (!$stream->isa('Async::Stream')) {
-			croak "First argument can be list of instances of Async::Stream or instance of derived class"
+			croak 'Arguments can be only Async::Stream or instances of derived class'
 		}
 	}
 
@@ -483,7 +530,9 @@ sub concat {
 			});
 	};
 
-	return $self = Async::Stream->new($generator);
+	$self->_set_head($generator, prefetch => 0);
+
+	return $self;
 }
 
 =head2 count($returing_cb)
@@ -551,7 +600,9 @@ sub skip {
 				});
 		};
 
-		return $self = Async::Stream->new($generator);
+		$self->_set_head($generator, prefetch => 0);
+
+		return $self;
 	} else {
 		return $self;
 	}
@@ -587,16 +638,18 @@ sub limit {
 		}
 	}
 
-	return $self = Async::Stream->new($generator);
+	$self->_set_head($generator, prefetch => 0);
+
+	return $self;
 }
 
-=head2 sort($comporator)
+=head2 arrange($comporator)
 
 The method sorts whole stream.
 
-  $stream->sort(sub{$a <=> $b})->to_arrayref(sub {print @{$_[0]}});
+  $stream->arrange(sub{$a <=> $b})->to_arrayref(sub {print @{$_[0]}});
 =cut
-sub sort {
+sub arrange {
 	my $self = shift;
 	my $comporator = shift;
 
@@ -606,45 +659,58 @@ sub sort {
 
 	my $pkg = caller;
 
-	my $sorted = 0;
-	my @sorted_array;
+	my $is_sorted = 0;
+	my @stream_items;
 	my $stream = $self;
+
+	my $iterator = $self->iterator;
 
 	my $generator = sub {
 		my $return_cb = shift;
-
-		if (!$sorted) {
-			$stream->to_arrayref(sub{
-					my $array = shift;
-					if (@{$array}) {
-						{
-							no strict 'refs';
-							local *{ $pkg . '::a' } = *{ __PACKAGE__ . '::a' };
-							local *{ $pkg . '::b' } = *{ __PACKAGE__ . '::b' };
-							@sorted_array = sort $comporator @{$array};
-						}
-						$sorted = 1;
-						$return_cb->(shift @sorted_array);
-					} else {
-						$return_cb->();
-					}
-				});
+		if ($is_sorted) {
+			$return_cb->( @stream_items ? shift @stream_items : () );
 		} else {
-			$return_cb->(@sorted_array ? shift(@sorted_array) : ());
+			my $next_cb; $next_cb = sub {
+				my $next_cb = $next_cb;
+				$iterator->next(sub {
+						if (@_) {
+							push @stream_items, $_[0];
+							$next_cb->();
+						} else {
+							if (@stream_items) {
+								{
+									no strict 'refs';
+									local *{ $pkg . '::a' } = *{ ref($self) . '::a' };
+									local *{ $pkg . '::b' } = *{ ref($self) . '::b' };
+									@stream_items = sort $comporator @stream_items;
+								}
+								$is_sorted = 1;
+								$return_cb->(shift @stream_items);
+							} else {
+								$return_cb->();
+							}
+						}
+					});
+			};$next_cb->();
+			weaken $next_cb;
 		}
 	};
 
-	return $self = Async::Stream->new($generator);
+	$self->_set_head($generator, prefetch => 0);
+
+	return $self;
 }
 
-=head2 cut_sort($predicat, $comporator)
+=head2 cut_arrange($predicat, $comporator)
 
-Sometimes stream can be infinity and you can't you $stream->sort, you need certain parts of streams
-for example cut part by lenght of items.
+Sometimes stream can be infinity and you can't you $stream->arrange, 
+you need certain parts of streams for example cut part by lenght of items.
 
-  $stream->cut_sort(sub {lenght $a != lenght $b},sub {$a <=> $b})->to_arrayref(sub {print @{$_[0]}});
+  $stream
+    ->cut_arrange(sub {lenght $a != lenght $b},sub {$a <=> $b})
+    ->to_arrayref(sub {print @{$_[0]}});
 =cut
-sub cut_sort {
+sub cut_arrange {
 	my $self = shift;
 	my $cut = shift;
 	my $comporator = shift;
@@ -677,15 +743,22 @@ sub cut_sort {
 					});
 			} else {
 				$iterator->next(sub {
-						no strict 'refs';
 						if (@_) {
-							local ${ $pkg . '::a' } = $prev;
-							local ${ $pkg . '::b' } = $_[0];
+							my $is_cut;
+							{
+								no strict 'refs';
+								local ${ $pkg . '::a' } = $prev;
+								local ${ $pkg . '::b' } = $_[0];
+								$is_cut = $cut->();
+							}
 							$prev = $_[0];
-							if ($cut->()) {
-								local *{ $pkg . '::a' } = *{ __PACKAGE__ . '::a' };
-								local *{ $pkg . '::b' } = *{ __PACKAGE__ . '::b' };
-								@sorted_array = sort $comporator @cur_slice;
+							if ($is_cut) {
+								{
+									no strict 'refs';
+									local *{ $pkg . '::a' } = *{ ref($self) . '::a' };
+									local *{ $pkg . '::b' } = *{ ref($self) . '::b' };
+									@sorted_array = sort $comporator @cur_slice;
+								}
 								@cur_slice = ($prev);
 								$return_cb->(shift @sorted_array);
 							} else {
@@ -694,9 +767,12 @@ sub cut_sort {
 							}
 						} else {
 							if (@cur_slice) {
-								local *{ $pkg . '::a' } = *{ __PACKAGE__ . '::a' };
-								local *{ $pkg . '::b' } = *{ __PACKAGE__ . '::b' };
-								@sorted_array = sort $comporator @cur_slice;
+								{
+									no strict 'refs';
+									local *{ $pkg . '::a' } = *{ ref($self) . '::a' };
+									local *{ $pkg . '::b' } = *{ ref($self) . '::b' };
+									@sorted_array = sort $comporator @cur_slice;
+								}
 								@cur_slice = ();
 								$return_cb->(shift @sorted_array);
 							} else {
@@ -708,7 +784,68 @@ sub cut_sort {
 		}
 	};
 
-	return $self = Async::Stream->new($generator)
+	$self->_set_head($generator, prefetch => 0);
+
+	return $self;
+}
+
+sub _set_head {
+	my $self = shift;
+	my $generator = shift;
+	my %args = @_;
+
+	my $prefetch = $args{prefetch} // $self->{_prefetch};
+
+	if ($prefetch) {
+		my $new_generator = _get_prefetch_generator($generator, $self->{_prefetch});
+		$self->{_head} = Async::Stream::Item->new(undef, $new_generator);
+	} else {
+		$self->{_head} = Async::Stream::Item->new(undef, $generator);
+	}
+
+	return $self;
+}
+
+sub _get_prefetch_generator {
+	my ($generator,$prefetch) = @_;
+
+	my @responses_cache;
+	my @requests_queue;
+	my $is_exhausted = 0;
+	my $item_requested = 0;
+
+	return sub {
+			my $return_cb = shift;
+
+			if (@responses_cache) {
+				$return_cb->(shift @responses_cache);
+			} else {
+				push @requests_queue, $return_cb;
+			}
+
+			if (!$is_exhausted) {
+				for (0 .. ($prefetch - $item_requested)) {
+					$item_requested++;
+					$generator->(sub {
+							$item_requested--;
+							if (@_) {
+								if (@requests_queue) {
+									shift(@requests_queue)->($_[0]);
+								} else {
+									push @responses_cache, $_[0];
+								}
+							} else {
+								$is_exhausted = 1;
+								if (!$item_requested && @requests_queue) {
+									shift(@requests_queue)->();
+								}
+							}
+						});
+				}
+			} elsif (!$item_requested && @requests_queue) {
+				shift(@requests_queue)->();
+			}
+	};
 }
 
 =head1 AUTHOR
@@ -717,7 +854,8 @@ Kirill Sysoev, C<< <k.sysoev at me.com> >>
 
 =head1 BUGS AND LIMITATIONS
 
-Please report any bugs or feature requests to L<https://github.com/pestkam/p5-Async-Stream/issues>.
+Please report any bugs or feature requests to 
+L<https://github.com/pestkam/p5-Async-Stream/issues>.
 
 =head1 SUPPORT
 
