@@ -2,13 +2,11 @@
 
 Async::Stream - it's convinient way to work with async data flow.
 
+IMPORTANT! PUBLIC INTERFACE IS CHANGING, DO NOT USE IN PRODACTION BEFORE VERSION 1.0.
+
 # VERSION
 
-Version 0.04
-
-# INSTALL
-
-    cpanm Async::Stream
+Version 0.05
 
 # SYNOPSIS
 
@@ -32,7 +30,7 @@ Module helps to organize your async code to stream.
             };
         })
       ->filter(sub { $_->{headers}->{Status} =~ /^2/ })
-      ->each(sub {
+      ->for_each(sub {
           my $item = shift;
           print $item->{body};
         });
@@ -41,8 +39,10 @@ Module helps to organize your async code to stream.
 
 ## new($generator)
 
-Constructor creates instanse of class. Class method gets 1 arguments - generator subroutine referens to generate items.
-Generator will get a callback which it will use for returning result. If generator is exhausted then returning callback is called without arguments.
+Constructor creates instanse of class. 
+Class method gets 1 arguments - generator subroutine referens to generate items.
+Generator will get a callback which it will use for returning result. 
+If generator is exhausted then returning callback is called without arguments.
 
     my $i = 0;
     my $stream = Async::Stream->new(sub {
@@ -56,7 +56,8 @@ Generator will get a callback which it will use for returning result. If generat
 
 ## new\_from(@array\_of\_items)
 
-Constructor creates instanse of class. Class method gets a list of items which are used for generating streams.
+Constructor creates instanse of class. 
+Class method gets a list of items which are used for generating streams.
 
     my @domains = qw(
       ucoz.com
@@ -68,13 +69,22 @@ Constructor creates instanse of class. Class method gets a list of items which a
 
 ## head()
 
-Method returns stream's head item. Head is a instance of class Async::Stream::Item.
+Method returns stream's head item. 
+Head is a instance of class Async::Stream::Item.
+
+    my $stream_head = $stream->head;
+
+## prefetch($number)
+
+Method returns stream's head item. 
+Head is a instance of class Async::Stream::Item.
 
     my $stream_head = $stream->head;
 
 ## iterator()
 
-Method returns stream's iterator. Iterator is a instance of class Async::Stream::Iterator.
+Method returns stream's iterator. 
+Iterator is a instance of class Async::Stream::Iterator.
 
     my $stream_iterator = $stream->iterator;
 
@@ -88,7 +98,7 @@ Method returns stream's iterator.
         #...      
       });
 
-## each($action)
+## for\_each($action)
 
 Method execute action on each item in stream.
 
@@ -101,7 +111,8 @@ Method execute action on each item in stream.
 ## peek($action)
 
 This method helps to debug streams data flow. 
-You can use this method for printing or logging steam data and track data mutation between stream's transformations.
+You can use this method for printing or logging steam data and track data 
+mutation between stream's transformations.
 
     $stream->peek(sub { print $_, "\n" })->to_arrayref(sub {print @{$_[0]}});
 
@@ -119,8 +130,10 @@ Method smap transforms current stream. Transform works like lazy map.
 
 ## transform($transformer)
 
-Method transform current stream. Transform works like lazy map with async response. 
-You can use the method for example for async http request or another async operation.
+Method transform current stream. 
+Transform works like lazy map with async response. 
+You can use the method for example for async http request or another async 
+operation.
 
     $stream->transform(sub {
             $return_cb = shift;
@@ -194,18 +207,20 @@ The method limits $number items in stream.
 
     $stream->limit(5)->to_arrayref(sub {print @{$_[0]}});
 
-## sort($comporator)
+## arrange($comporator)
 
 The method sorts whole stream.
 
-    $stream->sort(sub{$a <=> $b})->to_arrayref(sub {print @{$_[0]}});
+    $stream->arrange(sub{$a <=> $b})->to_arrayref(sub {print @{$_[0]}});
 
-## cut\_sort($predicat, $comporator)
+## cut\_arrange($predicat, $comporator)
 
-Sometimes stream can be infinity and you can't you $stream->sort, you need certain parts of streams
-for example cut part by lenght of items.
+Sometimes stream can be infinity and you can't you $stream->arrange, 
+you need certain parts of streams for example cut part by lenght of items.
 
-    $stream->cut_sort(sub {lenght $a != lenght $b},sub {$a <=> $b})->to_arrayref(sub {print @{$_[0]}});
+    $stream
+      ->cut_arrange(sub {lenght $a != lenght $b},sub {$a <=> $b})
+      ->to_arrayref(sub {print @{$_[0]}});
 
 # AUTHOR
 
@@ -213,7 +228,8 @@ Kirill Sysoev, `<k.sysoev at me.com>`
 
 # BUGS AND LIMITATIONS
 
-Please report any bugs or feature requests to [https://github.com/pestkam/p5-Async-Stream/issues](https://github.com/pestkam/p5-Async-Stream/issues).
+Please report any bugs or feature requests to 
+[https://github.com/pestkam/p5-Async-Stream/issues](https://github.com/pestkam/p5-Async-Stream/issues).
 
 # SUPPORT
 
