@@ -4,9 +4,9 @@ use strict;
 use warnings;
 use Test::More;
 
-use Async::Stream;
+use Async::Stream qw(merge branch);
 
- plan tests => 21;
+ plan tests => 23;
 
 
 subtest 'Method new' => sub {
@@ -339,10 +339,46 @@ subtest 'Prefetch' => sub {
 		});
 
 	$test_stream->to_arrayref(sub{is_deeply($_[0],[1,3,4,2],"set prefetch after init")});
+};
 
+subtest 'Merge' => sub {
+	plan tests => 3;
+
+	my @test_array = (1,2,3);
+	my $test_stream = Async::Stream->new_from(@test_array);
+	my $test_stream1 = Async::Stream->new_from(@test_array);
+
+	my $merge_stream = merge { $a <=> $b } $test_stream, $test_stream1;
+
+	$merge_stream->to_arrayref(sub {
+			is_deeply(
+				$_[0], 
+				[sort {$a <=> $b} (@test_array, @test_array)], 
+				"Method concat",
+			);
+		});
+
+	eval { $test_stream->merge(sub {$a <=> $b}) };
+	ok($@, "Static method merge with bad argument 1");
+
+	eval { merge {$a <=> $b} 1,1 };
+	ok($@, "Static method merge with bad argument 2");
 
 };
 
+subtest 'Branch' => sub {
+	plan tests => 3;
+
+	my @test_array = (1,2,3,4,5,6);
+	my $test_stream = Async::Stream->new_from(@test_array);
+
+	my ($odd_stream, $even_stream) = branch {$_ % 2} $test_stream;
+	$odd_stream->to_arrayref(sub {is_deeply($_[0], [1, 3, 5], "Truth branch of stream")});
+	$even_stream->to_arrayref(sub {is_deeply($_[0], [2, 4, 6], "False branch of stream")});
+
+	eval { $test_stream->branch(sub {$a <=> $b}) };
+	ok($@, "Static method branch with bad argument");
+};
 
 diag( "Testing Async::Stream $Async::Stream::VERSION, Perl $], $^X" );
  	

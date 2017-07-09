@@ -6,7 +6,7 @@ IMPORTANT! PUBLIC INTERFACE IS CHANGING, DO NOT USE IN PRODACTION BEFORE VERSION
 
 # VERSION
 
-Version 0.05
+Version 0.06
 
 # SYNOPSIS
 
@@ -221,6 +221,20 @@ you need certain parts of streams for example cut part by lenght of items.
     $stream
       ->cut_arrange(sub {lenght $a != lenght $b},sub {$a <=> $b})
       ->to_arrayref(sub {print @{$_[0]}});
+
+## merge {comporator} $stream1, $stream2;
+
+Merge two or more stream by comparing each item of stream and return new stream.
+
+    my $ordered_stream = merge {$a <=> $b} $stream1, $stream2;
+
+## branch {predicat} $stream;
+
+Split stream into 2 stream are divided by predicat. Branch returns 2 streams.
+First stream will contain "true" items, Second - "false" items;
+
+    my ($success_stream, $error_stream) 
+      = branch {$_->{headers}{status} == 200} $stream;
 
 # AUTHOR
 

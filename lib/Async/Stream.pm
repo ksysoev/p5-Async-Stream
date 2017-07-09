@@ -7,8 +7,10 @@ use warnings;
 use Async::Stream::Item;
 use Async::Stream::Iterator;
 use Scalar::Util qw(weaken);
-
 use Carp;
+use Exporter 'import';
+
+our @EXPORT_OK = qw(merge branch);
 
 =head1 NAME
 
@@ -18,11 +20,11 @@ IMPORTANT! PUBLIC INTERFACE IS CHANGING, DO NOT USE IN PRODACTION BEFORE VERSION
 
 =head1 VERSION
 
-Version 0.05
+Version 0.06
 
 =cut
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 =head1 SYNOPSIS
 
@@ -787,6 +789,131 @@ sub cut_arrange {
 	$self->_set_head($generator, prefetch => 0);
 
 	return $self;
+}
+
+=head2 merge {comporator} $stream1, $stream2;
+
+Merge two or more stream by comparing each item of stream and return new stream.
+
+  my $ordered_stream = merge {$a <=> $b} $stream1, $stream2;
+=cut
+sub merge (&@) {
+	my $comporator = shift;
+
+	if (ref $comporator ne 'CODE') {
+		croak 'First argument can be only reference to subroutine';
+	}
+
+	my $pkg = caller;
+
+	my @iterators;
+	for my $stream (@_) {
+		if ($stream->isa('Async::Stream')) {
+			push @iterators, [$stream->iterator];	
+		} else {
+			croak 'Arguments can be only Async::Stream or instances of derived class'
+		}
+	}
+
+	my $generator = sub {
+		my $return_cb = shift;
+		my $requested_item = grep { @{$_} == 1 } @iterators;
+		for (my $i = 0; $i < @iterators; $i++) {
+			if (@{$iterators[$i]} == 1) {
+				my $iterator_id = $i;
+				$iterators[$iterator_id][0]->next(sub {
+						$requested_item--;
+						if (@_) {
+							my $item = shift;
+							push @{$iterators[$iterator_id]}, $item;
+						} else {
+							$iterators[$iterator_id] = undef;
+						}
+
+						if ($requested_item == 0) {
+							### it's awful and need to optimize ###
+							{
+								no strict 'refs';
+								my $comp = sub {
+									local ${ $pkg . '::a' } = $a->[1];
+									local ${ $pkg . '::b' } = $b->[1];
+									return $comporator->();
+								};
+								@iterators = sort $comp grep { defined $_ } @iterators;
+							}
+							### ###
+							if (@iterators) {
+								my $item = pop @{$iterators[0]};
+								$return_cb->($item);
+							} else {
+								$return_cb->();
+							}
+						}
+					});
+			}
+		}
+	};
+
+	return Async::Stream->new($generator);
+}
+
+=head2 branch {predicat} $stream;
+
+Split stream into 2 stream are divided by predicat. Branch returns 2 streams.
+First stream will contain "true" items, Second - "false" items;
+
+  my ($success_stream, $error_stream) 
+    = branch {$_->{headers}{status} == 200} $stream;
+=cut
+sub branch (&$) {
+	my $predicat = shift;
+	my $source_stream = shift;
+	
+	my @truth_items;
+	my @false_items;
+
+	my $iterator = $source_stream->iterator;
+
+	my $generator; $generator = sub {
+		my $return_cb = shift;
+		my $is_truth_branch = shift;
+
+		if ($is_truth_branch && @truth_items) {
+			return $return_cb->(shift @truth_items);
+		} elsif (!$is_truth_branch && @false_items) {
+			return $return_cb->(shift @false_items);
+		}
+
+		$iterator->next(sub {
+				if (@_) {
+					my $item = shift;
+					my $is_truth;
+					
+					{
+						local $_ = $item;
+						$is_truth = $predicat->();
+					}
+
+					if ($is_truth_branch && !$is_truth) {
+						push @false_items, $item;
+						return $generator->($return_cb,$is_truth_branch);
+					} elsif (!$is_truth_branch && $is_truth) {
+						push @truth_items, $item;
+						return $generator->($return_cb,$is_truth_branch);
+					} else {
+						return $return_cb->($item);
+					}
+				} else {
+					$return_cb->();
+				}
+			});
+	};
+
+
+	my $truth_branch = Async::Stream->new(sub { $generator->($_[0], 1) });
+	my $false_branch = Async::Stream->new(sub { $generator->($_[0], 0) });
+
+	return $truth_branch, $false_branch
 }
 
 sub _set_head {
