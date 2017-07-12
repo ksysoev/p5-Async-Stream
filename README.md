@@ -1,12 +1,12 @@
 # NAME
 
-Async::Stream - it's convinient way to work with async data flow.
+Async::Stream - it's convenient way to work with async data flow.
 
-IMPORTANT! PUBLIC INTERFACE IS CHANGING, DO NOT USE IN PRODACTION BEFORE VERSION 1.0.
+IMPORTANT! PUBLIC INTERFACE ISN'T STABLE, DO NOT USE IN PRODACTION BEFORE VERSION 1.0.
 
 # VERSION
 
-Version 0.06
+Version 0.07
 
 # SYNOPSIS
 
@@ -39,8 +39,8 @@ Module helps to organize your async code to stream.
 
 ## new($generator)
 
-Constructor creates instanse of class. 
-Class method gets 1 arguments - generator subroutine referens to generate items.
+Constructor creates instance of class. 
+Class method gets 1 arguments - generator subroutine references to generate items.
 Generator will get a callback which it will use for returning result. 
 If generator is exhausted then returning callback is called without arguments.
 
@@ -56,7 +56,7 @@ If generator is exhausted then returning callback is called without arguments.
 
 ## new\_from(@array\_of\_items)
 
-Constructor creates instanse of class. 
+Constructor creates instance of class. 
 Class method gets a list of items which are used for generating streams.
 
     my @domains = qw(
@@ -116,7 +116,7 @@ mutation between stream's transformations.
 
     $stream->peek(sub { print $_, "\n" })->to_arrayref(sub {print @{$_[0]}});
 
-## filter($predicat)
+## filter($predicate)
 
 The method filters current stream. Filter works like lazy grep.
 
@@ -181,11 +181,11 @@ The method finds out maximum item among all items in stream.
                     #...
       });
 
-## concat(@list\_of\_another\_streams)
+## append(@list\_of\_another\_streams)
 
-The method concatenates several streams.
+The method appends several streams to tail of current stream.
 
-    $stream->concat($stream1)->to_arrayref(sub {print @{$_[0]}}); 
+    $stream->append($stream1)->to_arrayref(sub {print @{$_[0]}}); 
 
 ## count($returing\_cb)
 
@@ -207,22 +207,22 @@ The method limits $number items in stream.
 
     $stream->limit(5)->to_arrayref(sub {print @{$_[0]}});
 
-## arrange($comporator)
+## arrange($comparator)
 
 The method sorts whole stream.
 
     $stream->arrange(sub{$a <=> $b})->to_arrayref(sub {print @{$_[0]}});
 
-## cut\_arrange($predicat, $comporator)
+## cut\_arrange($predicate, $comparator)
 
 Sometimes stream can be infinity and you can't you $stream->arrange, 
-you need certain parts of streams for example cut part by lenght of items.
+you need certain parts of streams for example cut part by length of items.
 
     $stream
-      ->cut_arrange(sub {lenght $a != lenght $b},sub {$a <=> $b})
+      ->cut_arrange(sub {length $a != length $b},sub {$a <=> $b})
       ->to_arrayref(sub {print @{$_[0]}});
 
-## merge {comporator} $stream1, $stream2;
+## merge {comparator} $stream1, $stream2;
 
 Merge two or more stream by comparing each item of stream and return new stream.
 
@@ -235,6 +235,20 @@ First stream will contain "true" items, Second - "false" items;
 
     my ($success_stream, $error_stream) 
       = branch {$_->{headers}{status} == 200} $stream;
+
+## any($predicat, $return\_cb)
+
+Method look for any equivalent item in steam. if there is any then return that.
+if there isn't  then return nothing.
+
+    $stream->any(sub {$_ % 2})->to_arrayref(sub {print @{$_[0]}});
+
+## distinct($key\_generator)
+
+Method discards duplicate items from stream. 
+By default uniqueness of items will be determined by textual representation of item.
+
+    $stream->distinct(sub {$_->{name}})->to_arrayref(sub {print @{$_[0]}});
 
 # AUTHOR
 
