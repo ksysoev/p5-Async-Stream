@@ -2,8 +2,6 @@
 
 Async::Stream - it's convenient way to work with async data flow.
 
-IMPORTANT! PUBLIC INTERFACE ISN'T STABLE, DO NOT USE IN PRODACTION BEFORE VERSION 1.0.
-
 # VERSION
 
 Version 0.08
@@ -20,7 +18,7 @@ Module helps to organize your async code to stream.
         http://google.com
       );
 
-    my $stream = Async::Stream->new_from(@urls);
+    my $stream = Async::Stream::FromArray->new(@urls);
 
     $stream
       ->transform(sub {
@@ -28,11 +26,10 @@ Module helps to organize your async code to stream.
           http_get $_, sub {
               $return_cb->({headers => $_[0], body => $_[0]})
             };
-        }, 'async')
-      ->filter(sub { $_->{headers}->{Status} =~ /^2/ })
-      ->for_each(sub {
-          my $item = shift;
-          print $item->{body};
+        })
+      ->grep(sub { $_->{headers}->{Status} =~ /^2/ })
+      ->each(sub {
+          print $_->{body};
         });
 
 # SUBROUTINES/METHODS
@@ -53,19 +50,6 @@ If generator is exhausted then returning callback is called without arguments.
           $return_cb->();
         }
       });
-
-## new\_from(@array\_of\_items)
-
-Constructor creates instance of class. 
-Class method gets a list of items which are used for generating streams.
-
-    my @domains = qw(
-      ucoz.com
-      ya.ru
-      googl.com
-    );
-    
-    my $stream = Async::Stream->new_from(@urls)
 
 ## head()
 
@@ -98,11 +82,17 @@ mutation between stream's transformations.
 
     $stream->peek(sub { print $_, "\n" })->to_arrayref(sub {print @{$_[0]}});
 
-## filter($predicate)
+## grep($predicate)
 
-The method filters current stream. Filter works like lazy grep.
+The method greps current stream. Filter works like lazy grep.
 
-    $stream->filter(sub {$_ % 2})->to_arrayref(sub {print @{$_[0]}});
+    $stream->grep(sub {$_ % 2})->to_arrayref(sub {print @{$_[0]}});
+
+## map($transformer)
+
+Method makes synchronous transformation for stream, like usual map for array.
+
+    $stream->map(sub { $_ * 2 })->to_arrayref(sub {print @{$_[0]}});
 
 ## transform($transformer)
 
@@ -112,13 +102,13 @@ You can use the method for example for async http request or another async
 operation.
 
     $stream->transform(sub {
-            $return_cb = shift;
+        $return_cb = shift;
         $return_cb->($_ * 2)
       })->to_arrayref(sub {print @{$_[0]}});
 
 ## append(@list\_streams)
 
-The method appends several streams to tail of current stream.
+The method appends one or several streams to tail of current stream.
 
     $stream->append($stream1)->to_arrayref(sub {print @{$_[0]}}); 
 
@@ -134,20 +124,34 @@ The method limits $number items in stream.
 
     $stream->limit(5)->to_arrayref(sub {print @{$_[0]}});
 
-## sorted($comparator)
+## spray($number)
+
+The method helps to divide items of stream to several items. 
+For example you can use this method to get some page, 
+then get all link from that page and make from these link another items.
+
+    $stream->spray(sub{ return (1 .. $_) })->to_arrayref(sub {print @{$_[0]}});
+
+## sort($comparator)
 
 The method sorts whole stream.
 
-    $stream->sorted(sub{$a <=> $b})->to_arrayref(sub {print @{$_[0]}});
+    $stream->sort(sub{$a <=> $b})->to_arrayref(sub {print @{$_[0]}});
 
-## cut\_sorted($predicate, $comparator)
+## cut\_sort($predicate, $comparator)
 
-Sometimes stream can be infinity and you can't you $stream->sorted, 
+Sometimes stream can be infinity and you can't you $stream->sort, 
 you need certain parts of streams for example cut part by length of items.
 
     $stream
-      ->cut_sorted(sub {length $a != length $b},sub {$a <=> $b})
+      ->cut_sort(sub {length $a != length $b},sub {$a <=> $b})
       ->to_arrayref(sub {print @{$_[0]}});
+
+## reverse()
+
+Revers order of stream's items. Can't be done on endless stream.
+
+    $stream->reverse;
 
 ## merge\_in($comparator, @list\_streams);
 
@@ -157,8 +161,7 @@ Merge additional streams into current stream by comparing each item of stream.
 
 ## $branch\_stream branch\_out($predicat);
 
-Split stream into 2 stream are divided by predicat. Branch returns 2 streams.
-First stream will contain "true" items, Second - "false" items;
+Method makes new branch of current stream by predicate.
 
     my $error_stream = $stream->branch_out(sub{$_->{headers}{status} != 200});
 
@@ -178,17 +181,15 @@ Method returns stream's iterator.
     $stream->to_arrayref(sub {
         $array_ref = shift;
 
-        #...      
+        #...
       });
 
-## for\_each($action)
+## each($action)
 
 Method execute action on each item in stream.
 
-    $stream->to_arrayref(sub {
-        $array_ref = shift;
-        
-        #...      
+    $stream->each(sub {
+        print $_, "\n";
       });
 
 ## reduce($accumulator, $returing\_cb)
@@ -198,8 +199,9 @@ Performs a reduction on the items of the stream.
     $stream->reduce(
       sub{ $a + $b }, 
       sub {
-          $sum = shift 
-                    #...
+        my $sum_of_items = shift;
+
+        ...
       });
 
 ## sum($returing\_cb)
@@ -208,8 +210,9 @@ The method computes sum of all items in stream.
 
     $stream->sum(
       sub {
-          $sum = shift 
-                    #...
+        my $sum_of_items = shift;
+
+        ...
       });
 
 ## min($returing\_cb)
@@ -218,8 +221,9 @@ The method finds out minimum item among all items in stream.
 
     $stream->min(
       sub {
-          $sum = shift 
-                    #...
+        my $min_item = shift;
+        
+        ...
       });
 
 ## max($returing\_cb)
@@ -228,8 +232,9 @@ The method finds out maximum item among all items in stream.
 
     $stream->max(
       sub {
-          $sum = shift 
-                    #...
+        my $max_item = shift;
+
+        ...
       });
 
 ## count($returing\_cb)
@@ -237,7 +242,7 @@ The method finds out maximum item among all items in stream.
 The method counts number items in streams.
 
     $stream->count(sub {
-        $count = shift;
+        my $count = shift;
       }); 
 
 ## any($predicat, $return\_cb)
@@ -245,7 +250,11 @@ The method counts number items in streams.
 Method look for any equivalent item in steam. if there is any then return that.
 if there isn't  then return nothing.
 
-    $stream->any(sub {$_ % 2})->to_arrayref(sub {print @{$_[0]}});
+    $stream->any(sub {$_ % 2}, sub{
+      my $odd_item = shift
+
+      ...
+    });
 
 # AUTHOR
 

@@ -4,7 +4,7 @@ use 5.010;
 use strict;
 use warnings;
 
-use Carp;
+use Carp qw(croak);
 
 
 use constant {
@@ -19,11 +19,11 @@ Item for Async::Stream
 
 =head1 VERSION
 
-Version 0.05
+Version 0.10
 
 =cut
 
-our $VERSION = '0.05';
+our $VERSION = '0.10';
 
 
 =head1 SYNOPSIS
