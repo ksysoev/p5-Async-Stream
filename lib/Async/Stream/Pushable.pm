@@ -86,7 +86,7 @@ sub new {
 =head2 push(@new_items)
 
 Push new items to stream
-	
+
   my $stream->push(@new_items);
 
 =cut
@@ -110,7 +110,7 @@ sub push {
 =head2 finalize()
 
 Finalize stream
-	
+
   my $stream->finalize;
 
 =cut

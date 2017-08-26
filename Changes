@@ -19,3 +19,8 @@ Revision history for Async-Stream
 0.07    12.07.17
         Adding methods distinct and any, Rename method concat to append.
 
+0.10    26.08.17
+        1) Rework public interface
+        2) Add pushable streams
+        3) add reverse and spray methods
+

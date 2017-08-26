@@ -6,7 +6,6 @@ use warnings;
 
 use Carp qw(croak);
 
-
 use constant {
 	VALUE => 0,
 	NEXT  => 1,
@@ -33,7 +32,7 @@ Creating and managing item for Async::Stream
   use Async::Stream::Item;
 
   my $stream_item = Async::Stream::Item->new($value, $next_item_cb);
-		
+
 =head1 SUBROUTINES/METHODS
 
 =head2 new($val,$generator)
@@ -45,9 +44,9 @@ Class method gets 2 arguments item's value and generator subroutine references t
   my $stream_item = Async::Stream::Item->new($i++, sub {
       my $return_cb = shift;
       if($i < 100){
-				$return_cb->($i++)
+        $return_cb->($i++)
       } else {
-				$return_cb->()
+        $return_cb->()
       }
     });
 
