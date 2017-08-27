@@ -16,11 +16,11 @@ Async::Stream - it's convenient way to work with async data flow.
 
 =head1 VERSION
 
-Version 0.08
+Version 0.11
 
 =cut
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 =head1 SYNOPSIS
 
