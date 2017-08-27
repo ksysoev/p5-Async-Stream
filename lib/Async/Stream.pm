@@ -3,6 +3,7 @@ package Async::Stream;
 use 5.010;
 use strict;
 use warnings;
+no warnings qw(ambiguous);
 
 use Async::Stream::Item;
 use Async::Stream::Iterator;
@@ -20,7 +21,7 @@ Version 0.11
 
 =cut
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 =head1 SYNOPSIS
 
@@ -132,6 +133,35 @@ Iterator is a instance of class Async::Stream::Iterator.
 sub iterator {
 	return Async::Stream::Iterator->new( $_[0]->head );
 }
+
+=head2 shift($return_cb)
+
+Remove first item from stream and return it to return callback
+
+  $stream->shift(sub {
+    if (@_){
+      my $item = shift;
+
+      ...
+    }
+  });
+=cut
+sub shift {
+	my ($self, $return_cb) = @_;
+
+	my $head = $self->head;
+	$head->next(sub {
+			if (@_) {
+				$self->{_head} = $_[0];
+				$return_cb->($_[0]->val);
+			} else {
+				$return_cb->();
+			}
+		});
+
+	return $self;
+}
+
 
 =head1 CONVEYOR METHODS
 
@@ -845,6 +875,38 @@ sub each {
 	my $each; $each = sub {
 		my $each = $each;
 		$iterator->next(sub {
+			if (@_) {
+				$action->() for ($_[0]);
+				$each->()
+			}
+		});
+	}; $each->();
+	weaken $each;
+
+	return $self;
+}
+
+
+=head2 shift_each($action)
+
+Method acts like each,but after process item, it removes them from the stream
+
+  $stream->shift_each(sub {
+      print $_, "\n";
+    });
+=cut
+sub shift_each {
+	my $self = shift;
+	my $action = shift;
+
+	if (ref $action ne 'CODE') {
+		croak 'First argument can be only subroutine reference'
+	}
+
+
+	my $each; $each = sub {
+		my $each = $each;
+		$self->shift(sub {
 			if (@_) {
 				$action->() for ($_[0]);
 				$each->()

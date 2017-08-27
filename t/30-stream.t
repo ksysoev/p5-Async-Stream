@@ -7,7 +7,7 @@ use Test::More;
 use Async::Stream;
 use Async::Stream::FromArray;
 
- plan tests => 26;
+ plan tests => 28;
 
 
 subtest 'Method new' => sub {
@@ -425,6 +425,34 @@ subtest 'Any' => sub {
 
 	$test_stream->any(sub{$_ == 4},sub{ok(!defined $_[0], "Any item isn't found")});
 };
+
+subtest 'Shift' => sub {
+	plan tests => 5;
+
+	my @test_array = (1,2,3);
+	my $test_stream = Async::Stream::FromArray->new(@test_array);
+
+	$test_stream->shift(sub{is($_[0], 1, "Shift item 1")});
+	$test_stream->shift(sub{is($_[0], 2, "Shift item 2")});
+	$test_stream->shift(sub{is($_[0], 3, "Shift item 3")});
+	$test_stream->count(sub{is($_[0],0,"Method count for shift")});
+
+	eval { $test_stream->each('bad argument') };
+	ok($@, "Method each with bad argument");
+};
+
+subtest 'Method shift_each' => sub {
+	plan tests => 5;
+
+	my @test_array = (1,2,3);
+	my $test_stream = Async::Stream::FromArray->new(@test_array);
+	$test_stream->shift_each(sub{is($_, shift @test_array,"Method shift_each")});
+	$test_stream->count(sub{is($_[0],0,"Method count for shift_each")});
+
+	eval { $test_stream->shift_each('bad argument') };
+	ok($@, "Method each with bad argument");
+};
+
 
 diag( "Testing Async::Stream $Async::Stream::VERSION, Perl $], $^X" );
  	
