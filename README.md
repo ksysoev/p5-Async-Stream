@@ -4,7 +4,7 @@ Async::Stream - it's convenient way to work with async data flow.
 
 # VERSION
 
-Version 0.08
+Version 0.11
 
 # SYNOPSIS
 
@@ -71,6 +71,18 @@ Method returns stream's iterator.
 Iterator is a instance of class Async::Stream::Iterator.
 
     my $stream_iterator = $stream->iterator;
+
+## shift($return\_cb)
+
+Remove first item from stream and return it to return callback
+
+    $stream->shift(sub {
+      if (@_){
+        my $item = shift;
+
+        ...
+      }
+    });
 
 # CONVEYOR METHODS
 
@@ -189,6 +201,14 @@ Method returns stream's iterator.
 Method execute action on each item in stream.
 
     $stream->each(sub {
+        print $_, "\n";
+      });
+
+## shift\_each($action)
+
+Method acts like each,but after process item, it removes them from the stream
+
+    $stream->shift_each(sub {
         print $_, "\n";
       });
 
