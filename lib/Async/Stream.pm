@@ -1129,7 +1129,7 @@ sub _set_head {
 	my $new_generator = $generator;
 
 	if ($prefetch) {
-		$new_generator = _get_prefetch_generator($generator, $self->{_prefetch});
+		$new_generator = $self->_get_prefetch_generator($generator, $self->{_prefetch});
 	}
 
 	$self->{_head} = Async::Stream::Item->new(undef, $new_generator);
@@ -1138,7 +1138,7 @@ sub _set_head {
 }
 
 sub _get_prefetch_generator {
-	my ($generator,$prefetch) = @_;
+	my ($self, $generator, $prefetch) = @_;
 
 	my @responses_cache;
 	my @requests_queue;
